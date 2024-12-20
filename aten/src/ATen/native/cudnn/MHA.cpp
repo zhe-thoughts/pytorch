@@ -499,7 +499,6 @@ auto build_graph_and_tensors_nestedtensor(
     double dropout_probability,
     const Tensor& cum_seqlen_q,
     const Tensor& cum_seqlen_kv,
-    const Tensor& output_shape,
     const Tensor& q,
     const Tensor& k,
     const Tensor& v,
@@ -892,7 +891,6 @@ void run_cudnn_SDP_fprop_nestedtensor(
     double dropout_probability,
     const Tensor& cum_seqlen_q,
     const Tensor& cum_seqlen_kv,
-    const Tensor& output_shape,
     const Tensor& q,
     const Tensor& k,
     const Tensor& v,
@@ -901,6 +899,7 @@ void run_cudnn_SDP_fprop_nestedtensor(
     Tensor& o,
     Tensor& dropoutseed,
     Tensor& dropoutoffset) {
+  std::cout << "RUN" << std::endl;
   cudnnHandle_t handle = getCudnnHandle();
 
   // do nothing if we got 0-element tensors
@@ -915,7 +914,7 @@ void run_cudnn_SDP_fprop_nestedtensor(
   if (return_softmaxstats && !softmaxstats.defined()) {
     softmaxstats = at::empty({q.size(0), h_q, 1}, q.options().dtype(kFloat));
   }
-
+  std::cout << "BUILDING" << std::endl;
   auto [mha_graph,
         Q,
         K,
@@ -948,7 +947,6 @@ void run_cudnn_SDP_fprop_nestedtensor(
     dropout_probability,
     cum_seqlen_q,
     cum_seqlen_kv,
-    output_shape,
     q,
     k,
     v,
@@ -964,6 +962,7 @@ void run_cudnn_SDP_fprop_nestedtensor(
   auto rag_k_off = cum_seqlen_kv.mul(h_k * d_qk);
   auto rag_v_off = cum_seqlen_kv.mul(h_v * d_v);
   auto rag_stats_off = cum_seqlen_q.mul(h_q);
+  std::cout << "BUILT" << std::endl;
   std::unordered_map<std::shared_ptr<fe::graph::Tensor_attributes>, void*>
       variant_pack = {
           {Q, q.data_ptr()},
@@ -979,6 +978,7 @@ void run_cudnn_SDP_fprop_nestedtensor(
           {RAG_V_OFF, rag_v_off.data_ptr()},
           {SEQ_LEN_Q, seqlen_q.data_ptr()},
           {SEQ_LEN_KV, seqlen_kv.data_ptr()}};
+  TORCH_WARN("RETURN ? ", return_softmaxstats);
   if (return_softmaxstats) {
     variant_pack[Stats] = softmaxstats.data_ptr();
     variant_pack[RAG_STATS_OFF] =  cum_seqlen_q.data_ptr();
