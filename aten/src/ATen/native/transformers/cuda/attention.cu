@@ -791,7 +791,6 @@ std::tuple<Tensor, Tensor, Tensor, Tensor, c10::SymInt, c10::SymInt, Tensor, Ten
     }
   
     Tensor attention, log_sumexp;
-  
     at::Tensor cudnn_seed, cudnn_offset;
     cudnn_seed = at::empty({}, at::dtype(at::kLong).device(at::kCUDA));
     cudnn_offset = at::empty({}, at::dtype(at::kLong).device(at::kCUDA));
