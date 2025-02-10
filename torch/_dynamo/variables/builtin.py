@@ -660,6 +660,12 @@ class BuiltinVariable(VariableTracker):
                     # and True for `is` and `is not`, respectively
                     if type(left) is not type(right):
                         return ConstantVariable.create(op.__name__ != "is_")
+                    # is => left is right -> True
+                    # is => left is not right -> False
+                    # is not => left is right -> False
+                    # is not => left is not right -> True
+                    if left is right:
+                        return ConstantVariable(op(left, right))
 
                 result.append(((VariableTracker, VariableTracker), handle_is))
 
