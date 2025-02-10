@@ -6018,6 +6018,71 @@ class TestNestedTensorSubclass(NestedTensorTestCase):
                 nt.values()[nt.offsets()[i] : (nt.offsets()[i] + nt.lengths()[i])],
             )
 
+    # TODO: Test this case with narrow()'s error_inputs when that is supported
+    @skipIfTorchDynamo("Test compiles internally")
+    @skipCUDAIf(not SM70OrLater, "GPU capability is < SM70")
+    @torch._dynamo.utils.disable_cache_limit()
+    @dtypes(torch.float32)
+    @parametrize("env", ["eager", "compile", "compile_dynamic"])
+    def test_narrow_on_batch_dim_input_validation(self, device, dtype, env):
+        nt = torch.nested.nested_tensor(
+            [
+                torch.randn(2, 5, device=device, dtype=dtype),
+                torch.randn(3, 5, device=device, dtype=dtype),
+                torch.randn(4, 5, device=device, dtype=dtype),
+                torch.randn(6, 5, device=device, dtype=dtype),
+                torch.randn(7, 5, device=device, dtype=dtype),
+            ],
+            layout=torch.jagged,
+            requires_grad=True,
+        )
+
+        def f(nt, start, length):
+            return nt.narrow(0, start, length)
+
+        if "compile" in env:
+            # required to avoid data-dependent guard errors
+            torch._dynamo.config.capture_scalar_outputs = True
+            f = torch.compile(f, dynamic=(env == "compile_dynamic"), fullgraph=True)
+
+        with self.assertRaisesRegex(RuntimeError, "exceeds dimension size"):
+            out = f(nt, 3, 3)
+
+    @skipIfTorchDynamo("Test compiles internally")
+    @skipCUDAIf(not SM70OrLater, "GPU capability is < SM70")
+    @torch._dynamo.utils.disable_cache_limit()
+    @dtypes(torch.float32)
+    @parametrize("env", ["eager", "compile", "compile_dynamic"])
+    def test_narrow_on_batch_dim_narrow_of_narrow(self, device, dtype, env):
+        nt = torch.nested.nested_tensor(
+            [
+                torch.randn(2, 5, device=device, dtype=dtype),
+                torch.randn(3, 5, device=device, dtype=dtype),
+                torch.randn(4, 5, device=device, dtype=dtype),
+                torch.randn(6, 5, device=device, dtype=dtype),
+                torch.randn(7, 5, device=device, dtype=dtype),
+            ],
+            layout=torch.jagged,
+            requires_grad=True,
+        )
+
+        def f(nt, start, length):
+            intermediate = nt.narrow(0, start, length)
+            return intermediate.narrow(0, 1, length - 2)
+
+        if "compile" in env:
+            # required to avoid data-dependent guard errors
+            torch._dynamo.config.capture_scalar_outputs = True
+            f = torch.compile(f, dynamic=(env == "compile_dynamic"), fullgraph=True)
+
+        # narrow() of narrow()ed NJT
+        # first narrow(): 1:5
+        # second narrow() 1+1:4-2 == 2:4
+        out = f(nt, 1, 4)
+        self.assertEqual(out.shape[0], 2)
+        for out_comp, nt_comp in zip(out.unbind(), nt.unbind()[2:4]):
+            self.assertEqual(out_comp, nt_comp)
+
     def test_njt_cat(self, device):
         offsets = torch.tensor([0, 2, 3], device=device, dtype=torch.int64)
         values_1 = torch.randn(
@@ -8108,7 +8173,6 @@ FORWARD_SKIPS_AND_XFAILS = [
             in {
                 "chunk",
                 "masked_select",
-                "narrow",
                 "split",
                 "split_with_sizes",
                 "squeeze",
@@ -8135,6 +8199,17 @@ FORWARD_SKIPS_AND_XFAILS = [
         sample_match_fn=lambda device, sample: "ragged_dim" in sample.name,
         name="ragged_dim_unsupported",
     ),
+    # narrow(): not supported with non-contig on dims other than the batch dim
+    XFailRule(
+        error_type=RuntimeError,
+        error_msg="not yet supported on dim != 0 for non-contiguous nested tensors",
+        op_match_fn=lambda device, op: (op.full_name == "narrow"),
+        sample_match_fn=lambda device, sample: (
+            sample.kwargs["dim"] != 0
+            and (sample.input._lengths is not None or sample.input._ragged_idx != 1)
+        ),
+        name="narrow_missing_noncontig_support_on_batch_dim",
+    ),
     XFailRule(
         error_type=RuntimeError,
         # error comes from usage of view() in the decomp
@@ -8150,7 +8225,6 @@ FORWARD_SKIPS_AND_XFAILS = [
         op_match_fn=lambda device, op: (
             op.full_name
             in {
-                "narrow",
                 "split",
                 "split_with_sizes",
                 "unsqueeze",
@@ -8342,13 +8416,6 @@ BACKWARD_SKIPS_AND_XFAILS = [
         sample_match_fn=lambda device, sample: ("with bias" in sample.name),
         name="broken_linear_backward",
     ),
-    # narrow(): unimplemented backward
-    XFailRule(
-        error_type=RuntimeError,
-        error_msg="derivative for aten::narrow is not implemented",
-        op_match_fn=lambda device, op: (op.full_name == "narrow"),
-        name="broken_narrow_backward",
-    ),
     # min / max: need factory function support for ragged dim reductions
     # where the output is dense but sizes still contain a nested int
     XFailRule(
@@ -8430,6 +8497,14 @@ BACKWARD_SKIPS_AND_XFAILS = [
 
 COMPILE_FORWARD_SKIPS_AND_XFAILS = [
     *FORWARD_SKIPS_AND_XFAILS,
+    # select(): pending unbacked symints not in returned output (needs fix)
+    XFailRule(
+        error_type=torch._dynamo.exc.InternalTorchDynamoError,
+        error_msg="Pending unbacked symbols",
+        op_match_fn=lambda device, op: (op.full_name == "select"),
+        sample_match_fn=lambda device, sample: ("batch_dim" in sample.name),
+        name="broken_select_backward_unbacked",
+    ),
     # Needs investigation in AOTAutograd: len(unwrapped_args) == num_args_tallied assertion fails
     # e.g. Expected 5 == 4
     XFailRule(
@@ -8459,12 +8534,16 @@ COMPILE_FORWARD_SKIPS_AND_XFAILS = [
         ),
         name="clone_unbind_data_dependency",
     ),
-    # chunk(): broken in several ways on the batch dim; revisit after similar
-    # data-dependency issues are handled for narrow()
-    SkipRule(
+    # chunk() on the batch dim with chunks=1 causes an unbacked SymInt problem; this
+    # needs to be investigated
+    XFailRule(
+        error_type=AssertionError,
+        error_msg="s1",
         op_match_fn=lambda device, op: (op.full_name == "chunk"),
-        sample_match_fn=lambda device, sample: ("batch_dim" in sample.name),
-        name="broken_chunk_compile_backward_on_batch_dim",
+        sample_match_fn=lambda device, sample: (
+            "batch_dim" in sample.name and sample.kwargs["chunks"] == 1
+        ),
+        name="chunk_batch_dim_data_dependency",
     ),
     # select on batch dim currently uses unbind(), leading to data-dependent error in
     # torch.compile that needs to be addressed via torch._check()
@@ -8496,6 +8575,26 @@ COMPILE_BACKWARD_SKIPS_AND_XFAILS = [
         op_match_fn=lambda device, op: True,
         sample_match_fn=lambda device, sample: ("noncontig_holes" in sample.name),
         name="noncontig_holes_data_dependency",
+    ),
+    # narrow(): non-contig on the batch dim has some problems when not spanning
+    # the entire batch dim (nearly all the time). This needs some investigation.
+    XFailRule(
+        error_type=torch._dynamo.exc.BackendCompilerFailed,
+        # GuardOnDataDependentSymNode: Could not guard on data-dependent expression
+        # Eq(IsNonOverlappingAndDenseIndicator(5, 3, u9, 81, 27, 1), 1)
+        # (unhinted: Eq(IsNonOverlappingAndDenseIndicator(5, 3, u9, 3*s1, s1, 1), 1)).
+        # (Size-like symbols: u9)
+        error_msg="Could not guard on data-dependent expression",
+        op_match_fn=lambda device, op: (op.full_name == "narrow"),
+        sample_match_fn=lambda device, sample: (
+            (sample.input._lengths is not None or sample.input._ragged_idx != 1)
+            and sample.kwargs["dim"] == 0
+            and (
+                sample.kwargs["start"] != 0
+                or sample.kwargs["length"] != sample.input.shape[0]
+            )
+        ),
+        name="narrow_noncontig_on_batch_dim_broken",
     ),
     # mean(): weird bug
     XFailRule(
@@ -8545,8 +8644,10 @@ COMPILE_BACKWARD_SKIPS_AND_XFAILS = [
 ]
 
 COMPARE_TENSOR_COMPONENT_EQUALITY = {
-    # masked_select is expected to output a different shape
+    # these ops are expected to output a different shape
+    "chunk",
     "masked_select",
+    "narrow",
 }
 
 
