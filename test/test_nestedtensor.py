@@ -8631,6 +8631,7 @@ class TestNestedTensorOpInfo(NestedTensorTestCase):
 
                     self.assertEqualNoncontigAware(grads, grads_ref)
 
+    @skipCUDAIf(not SM70OrLater, "GPU capability is < SM70")
     @ops(
         [op for op in njt_op_db if op.supports_njt],
         allowed_dtypes=(torch.float32,),
@@ -8651,9 +8652,7 @@ class TestNestedTensorOpInfo(NestedTensorTestCase):
                 def f(*args, **kwargs):
                     return op_fn(*args, **kwargs)
 
-                compiled_f = torch.compile(
-                    f, fullgraph=True, backend="aot_eager_decomp_partition"
-                )
+                compiled_f = torch.compile(f, fullgraph=True, backend="inductor")
 
                 out_ref = f(sample.input, *sample.args, **sample.kwargs)
                 out_compile = compiled_f(sample.input, *sample.args, **sample.kwargs)
@@ -8676,7 +8675,7 @@ class TestNestedTensorOpInfo(NestedTensorTestCase):
                         return op_fn(*args, **kwargs)
 
                     compiled_in_f = torch.compile(
-                        in_f, fullgraph=True, backend="aot_eager_decomp_partition"
+                        in_f, fullgraph=True, backend="inductor"
                     )
 
                     compiled_in_f(sample.input, *sample.args, **sample.kwargs)
@@ -8685,6 +8684,7 @@ class TestNestedTensorOpInfo(NestedTensorTestCase):
                     else:
                         self.assertEqual(sample.input, out_ref)
 
+    @skipCUDAIf(not SM70OrLater, "GPU capability is < SM70")
     @ops(
         [op for op in njt_op_db if op.supports_njt and op.supports_autograd],
         allowed_dtypes=(torch.float32,),
@@ -8705,9 +8705,7 @@ class TestNestedTensorOpInfo(NestedTensorTestCase):
                 def f(*args, **kwargs):
                     return op_fn(*args, **kwargs)
 
-                compiled_f = torch.compile(
-                    f, fullgraph=True, backend="aot_eager_decomp_partition"
-                )
+                compiled_f = torch.compile(f, fullgraph=True, backend="inductor")
 
                 out_ref = f(sample.input, *sample.args, **sample.kwargs)
                 out_compile = compiled_f(sample.input, *sample.args, **sample.kwargs)
