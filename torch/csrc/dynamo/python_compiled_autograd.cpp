@@ -52,6 +52,23 @@ Notes:
 namespace torch::dynamo::autograd {
 using c10::SymInt;
 
+// lives only for 1 invocation
+struct RuntimeState {
+  static RuntimeState* get() {
+    static RuntimeState _state;
+    return &_state;
+  }
+
+  void clear() {
+    cpp_hooks.clear();
+    next_id = 0;
+  }
+  // populated by compiled_args
+  // py::list cpp_hooks;
+  std::vector<std::function<void()>> cpp_hooks;
+  size_t next_id = 0;
+};
+
 // List[Optional[Tensor]] in Python can't be directly parsed into a
 // List[Tensor], so we need to do this conversion manually.
 static std::vector<at::Tensor> toTensorList(
@@ -576,12 +593,28 @@ static PyObject* set_verbose_logger(PyObject* dummy, PyObject* args) {
   END_HANDLE_TH_ERRORS;
 }
 
+static PyObject* call_cpp_hook(PyObject* dummy, PyObject* args) {
+  HANDLE_TH_ERRORS;
+  int idx = -1;
+  if (!PyArg_ParseTuple(args, "i", &idx)) {
+    throw_python_error();
+  }
+  TORCH_INTERNAL_ASSERT(idx != -1);
+
+  std::cout << "executing call_cpp_hook["<< idx <<"]" << std::endl;
+  RuntimeState::get()->cpp_hooks[idx]();
+
+  Py_RETURN_TRUE;
+  END_HANDLE_TH_ERRORS;
+}
+
 // NOLINTNEXTLINE(*array*)
 static PyMethodDef _methods[] = {
     {"set_autograd_compiler", set_autograd_compiler, METH_VARARGS, nullptr},
     {"clear_cache", clear_cache, METH_NOARGS, nullptr},
     {"is_cache_empty", is_cache_empty, METH_NOARGS, nullptr},
     {"set_verbose_logger", set_verbose_logger, METH_VARARGS, nullptr},
+    {"call_cpp_hook", call_cpp_hook, METH_VARARGS, nullptr},
     {nullptr, nullptr, 0, nullptr}};
 
 static struct PyModuleDef _module = {
@@ -796,7 +829,8 @@ static CacheNode* _compiled_autograd_impl(
     THPObjectPtr* graph_arg_inputs,
     THPObjectPtr* graph_arg_sizes,
     THPObjectPtr* graph_arg_ivalue_args,
-    THPObjectPtr* graph_arg_hooks) {
+    THPObjectPtr* graph_arg_hooks,
+    RuntimeState* rstate) {
   std::unordered_map<Node*, int>& dependencies = graph_task.dependencies_;
   std::vector<std::shared_ptr<Node>> worklist{graph_root};
   AutogradCompilerCall compiler_call(get_default_dyn_type());
@@ -868,6 +902,16 @@ static CacheNode* _compiled_autograd_impl(
       }
     }
     i++;
+  }
+
+  if (!compiler_call.cpp_hooks.empty()) {
+    TORCH_INTERNAL_ASSERT(rstate->cpp_hooks.empty());
+    // for (auto& hook : compiler_call.cpp_hooks) {
+    //   // auto pyhook = py::cpp_function(hook);
+    //   // rstate->cpp_hooks.append(std::move(pyhook));
+    // }
+    rstate->cpp_hooks = std::move(compiler_call.cpp_hooks);
+    compiler_call.cpp_hooks.clear();
   }
 
   // TODO(jansel): some dynamic sizes seem to be ints not symints
@@ -1000,6 +1044,7 @@ static CacheNode* _compiled_autograd_impl(
       saved.debug_asserts();
 
       if (!call.post_hooks.empty()) {
+        std::cout << "calling post hooks from CA" << std::endl;
         THPObjectPtr pyinputs(THPVariable_WrapList(inputs));
         THPObjectPtr pyoutputs(THPVariable_WrapList(outputs));
         for (const auto hook : call.post_hooks) {
@@ -1010,6 +1055,24 @@ static CacheNode* _compiled_autograd_impl(
               pyoutputs.get(),
               pyinputs.get(),
               hook));
+        }
+        outputs = THPVariable_UnpackList(pyoutputs);
+      }
+      if (!call.cpp_post_hooks.empty()) {
+        std::cout << "found c++ post hooks from CA" << std::endl;
+        THPObjectPtr pyinputs(THPVariable_WrapList(inputs));
+        THPObjectPtr pyoutputs(THPVariable_WrapList(outputs));
+        for (const auto hook_id : call.cpp_post_hooks) {
+          std::cout << "rstate->next_id=" << rstate->next_id << ", hook_id=" << hook_id << std::endl;
+          TORCH_INTERNAL_ASSERT(rstate->next_id == static_cast<size_t>(hook_id));
+          pyoutputs = check(PyObject_CallMethod(
+              py_compiler.get(),
+              "cpp_post_hook",
+              "OOi",
+              pyoutputs.get(),
+              pyinputs.get(),
+              hook_id));
+          rstate->next_id++;
         }
         outputs = THPVariable_UnpackList(pyoutputs);
       }
@@ -1048,6 +1111,11 @@ static CacheNode* _compiled_autograd_impl(
     }
   }
 
+  std::cout << "CA found input tensors: ";
+  for (const auto& tensor : compiler_call.tensor_args.inputs) {
+    std::cout << tensor.unsafeGetTensorImpl() << ", ";
+  }
+  std::cout << std::endl;
   *graph_arg_inputs = THPVariable_WrapList(compiler_call.tensor_args.inputs);
   *graph_arg_sizes = wrap_int_list(compiler_call.dyn_size_inputs);
   *graph_arg_ivalue_args =
@@ -1093,6 +1161,8 @@ static variable_list compiled_autograd(
   THPObjectPtr sizes;
   THPObjectPtr ivalue_args;
   THPObjectPtr hooks;
+  auto* rstate = RuntimeState::get();
+  rstate->clear();
   CacheNode* cache = _compiled_autograd_impl(
       graph_root,
       graph_task,
@@ -1101,7 +1171,8 @@ static variable_list compiled_autograd(
       &inputs,
       &sizes,
       &ivalue_args,
-      &hooks);
+      &hooks,
+      rstate);
 
   THPObjectPtr pyresult(check(PyObject_CallFunctionObjArgs(
       cache->runtime_wrapper.get(),
@@ -1110,9 +1181,11 @@ static variable_list compiled_autograd(
       sizes.get(),
       ivalue_args.get(),
       hooks.get(),
+      Py_None,
       NULL)));
   variable_list outputs = THPVariable_UnpackList(pyresult);
   TORCH_INTERNAL_ASSERT(outputs.size() == output_edges.size());
+  rstate->clear();
   return outputs;
 }
 

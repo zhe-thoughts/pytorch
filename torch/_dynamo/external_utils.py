@@ -56,6 +56,10 @@ def call_hook(
     """
     Used by compiled autograd to handle hook returning None.
     """
+    if kwargs.get("hook_type") == "cpp_post_hook":
+        hook()
+        return args[0]
+
     result = hook(*args)
     if result is None:
         return args[0]
@@ -165,3 +169,6 @@ def call_module_hooks_from_backward_state(
         if new_result is not None:
             result = new_result
     return result
+
+def call_cpp_hook(i):
+    torch._C._dynamo.compiled_autograd.call_cpp_hook(i)
