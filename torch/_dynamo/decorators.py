@@ -422,7 +422,6 @@ def _apply_func_to_inner_tensors_of_same_dim(func, t, *args, **kwargs):
         if inner.dim() == t.dim():
             func(inner, *args, **kwargs)
 
-
 @dataclass(frozen=True)
 class _DimRange:
     """
