@@ -2736,21 +2736,12 @@ class Scheduler:
         assert device is not None
 
         def log_fusion(ms_fused: float, ms1: float, ms2: float) -> None:
-            if fusion_log.isEnabledFor(logging.DEBUG):
-                if ms_fused < ms1 + ms2:
-                    fusion_log.debug(
-                        "can fuse (benchmark): fusing %s with %s cause %sx speedup",
-                        node1.get_buffer_names(),
-                        node2.get_buffer_names(),
-                        green_text(f"{(ms1 + ms2) / ms_fused:.3f}"),
-                    )
-                else:
-                    fusion_log.debug(
-                        "cannot fuse (benchmark): fusing %s with %s cause %sx slowdown",
-                        node1.get_buffer_names(),
-                        node2.get_buffer_names(),
-                        red_text(f"{ms_fused / (ms1 + ms2):.3f}"),
-                    )
+            speedup = (ms1 + ms2) / ms_fused
+            if ms_fused < ms1 + ms2:
+                message = f"can fuse (benchmark): fusing {node1.get_buffer_names()} with {node2.get_buffer_names()} cause {green_text(f'{speedup:.3f}')}x speedup"
+            else:
+                message = f"cannot fuse (benchmark): fusing {node1.get_buffer_names()} with {node2.get_buffer_names()} cause {red_text(f'{1/speedup:.3f}')}x slowdown"
+            fusion_log.debug(message)
 
         async_compile = torch._inductor.async_compile.AsyncCompile()
 
@@ -3824,7 +3815,9 @@ class Scheduler:
             fusion_pair_priority = int(
                 self.get_backend(device).get_fusion_pair_priority(node1, node2)
             )
-            possible_fusions_group_by_priority[fusion_pair_priority].append((node1, node2))
+            possible_fusions_group_by_priority[fusion_pair_priority].append(
+                (node1, node2)
+            )
         # return the possible fusions with highest priority
         possible_fusions_with_highest_priority = min(
             possible_fusions_group_by_priority.items(), key=operator.itemgetter(0)
