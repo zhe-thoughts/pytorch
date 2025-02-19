@@ -99,7 +99,7 @@ class CoordescTuner:
         ]
         if self.is_mm:
             out.append("num_stages")
-        if self.inductor_meta["is_hip"]:
+        if self.inductor_meta.get("is_hip") is True:
             out.append("waves_per_eu")
 
         return out
