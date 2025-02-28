@@ -1543,6 +1543,23 @@ class AOTInductorTestsTemplate:
             dynamic_shapes=dynamic_shapes,
         )
 
+    @skip("Need to support cpp wrapper codegen.")
+    @common_utils.parametrize("dynamic", [False, True])
+    def test_while_loop_with_int_carry(self, dynamic):
+        inputs = (torch.randn(10, 20, device=self.device),)
+        dim0_ab = Dim("s0", min=2, max=1024)
+        dynamic_shapes = None
+        if dynamic:
+            dynamic_shapes = {
+                "c": {},
+                "x": {0: dim0_ab, 1: None},
+            }
+        self.check_model_with_multiple_inputs(
+            WhileLoopModels.IntCarry(),
+            prepend_counters(inputs),
+            dynamic_shapes=dynamic_shapes,
+        )
+
     @common_utils.parametrize("dynamic", [False, True])
     def test_while_loop_with_mixed_device(self, dynamic):
         inputs = (

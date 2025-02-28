@@ -7400,7 +7400,7 @@ class WhileLoop(ExternKernel):
     additional_inputs: Optional[list[Union[TensorBox, ShapeAsConstantBuffer]]] = None
     cond_subgraph: Optional[Subgraph] = None
     body_subgraph: Optional[Subgraph] = None
-    outputs: Optional[list[MultiOutput]] = None
+    outputs: Optional[list[Union[MultiOutput, ShapeAsConstantBuffer]]] = None
 
     def __init__(
         self,
@@ -7409,6 +7409,7 @@ class WhileLoop(ExternKernel):
         cond_subgraph: Subgraph,
         body_subgraph: Subgraph,
         layout: MultiOutputLayout,
+        unbacked_bindings: Optional[dict[sympy.Symbol, pytree.KeyPath]],
     ) -> None:
         self.carried_inputs = carried_inputs
         self.additional_inputs = additional_inputs
@@ -7424,6 +7425,8 @@ class WhileLoop(ExternKernel):
         )
 
         self.name = V.graph.register_buffer(self)
+        if unbacked_bindings is not None:
+            self.unbacked_bindings = unbacked_bindings
         V.graph.register_operation(self)
 
     @classmethod
@@ -7434,14 +7437,37 @@ class WhileLoop(ExternKernel):
         carried_inputs: list[Union[TensorBox, ShapeAsConstantBuffer]],
         additional_inputs: list[Union[TensorBox, ShapeAsConstantBuffer]],
     ):
+        from torch._higher_order_ops.while_loop import check_meta_consistency
+
         carried_inputs = [cls.realize_input(x) for x in carried_inputs]
         additional_inputs = [cls.realize_input(x) for x in additional_inputs]
         all_inputs = carried_inputs + additional_inputs
 
         fx_all_inputs = V.graph.current_node.args[-2] + V.graph.current_node.args[-1]  # type: ignore[operator]
-        fake_all_inputs = [x.meta["val"] for x in fx_all_inputs]  # type: ignore[union-attr]
+
+        # constant ints are not fx.Node
+        fake_while_loop_inputs = [
+            x.meta["val"] if isinstance(x, torch.fx.Node) else x
+            for x in fx_all_inputs  # type: ignore[union-attr]
+        ]
 
         for subgraph in (cond_fn, body_fn):
+            # For front-end design, see NOTE [unspecialize int carry with unbacked symints]
+            # We cannot create new unbacked symints and use them to lower subgraph because graph lowering
+            # doesn't do a re-compute of the magic methods on sym exprs during lowering: it makes use the
+            # meta["val"] directly. See the tracking issue: https://github.com/pytorch/pytorch/issues/127789.
+            # So the idea is to re-use the unbacked symbols we've created in the front end.
+            fake_subgraph_inputs = [
+                node.meta["val"]
+                for node in subgraph.graph_module.graph.find_nodes(op="placeholder")
+            ]
+
+            check_meta_consistency(
+                fake_while_loop_inputs,  # type: ignore[arg-type]
+                fake_subgraph_inputs,
+                "while_loop_inputs",
+                "subgraph_inputs",
+            )
             if subgraph.graph is None:
                 # create and lower subgraphs
                 subgraph.graph = V.graph.make_subgraph(
@@ -7450,7 +7476,7 @@ class WhileLoop(ExternKernel):
                     subgraph_name=subgraph.name,
                 )
                 with V.set_graph_handler(subgraph.graph):
-                    subgraph.graph.run(*fake_all_inputs)
+                    subgraph.graph.run(*fake_subgraph_inputs)
 
         cond_outputs = cond_fn.graph.graph_outputs  # type: ignore[union-attr]
         body_outputs = body_fn.graph.graph_outputs  # type: ignore[union-attr]
@@ -7461,7 +7487,6 @@ class WhileLoop(ExternKernel):
                 f"The outputs of the body_fn subgraph of torch.while_loop are aliased: {body_outputs}"
             )
 
-        # make sure cond_fn returns a boolean scalar Tensor
         assert len(cond_outputs) == 1, cond_outputs
         p = cond_outputs[0]
         if not isinstance(p, ShapeAsConstantBuffer):
@@ -7472,27 +7497,45 @@ class WhileLoop(ExternKernel):
             "torch.while_loop is assumed to have at least one operand."
         )
 
-        device = all_inputs[0].get_device()
-
+        device = next(
+            (
+                t.get_device()
+                for t in carried_inputs
+                if not isinstance(t, ShapeAsConstantBuffer)
+            ),
+            None,
+        )
+        assert device is not None, "cannot determine device"
         # make sure carried_inputs and body outputs are structurally equivalent
         assert len(carried_inputs) == len(body_outputs), (carried_inputs, body_outputs)
         for i, (op, bo) in enumerate(zip(carried_inputs, body_outputs)):
+            if not isinstance(op, ShapeAsConstantBuffer) or not isinstance(
+                bo, ShapeAsConstantBuffer
+            ):
 
-            def _guard_list_equals(
-                lhs_exprs: list[Union[int, sympy.expr]],
-                rhs_exprs: list[Union[int, sympy.expr]],
-            ) -> None:
-                for lhs, rhs in zip(lhs_exprs, rhs_exprs):
-                    V.graph.sizevars.guard_equals(lhs, rhs)
+                def _guard_list_equals(
+                    lhs_exprs: list[Union[int, sympy.expr]],
+                    rhs_exprs: list[Union[int, sympy.expr]],
+                ) -> None:
+                    for lhs, rhs in zip(lhs_exprs, rhs_exprs):
+                        V.graph.sizevars.guard_equals(lhs, rhs)
 
-            _guard_list_equals(op.get_size(), bo.get_size())
-            _guard_list_equals(op.get_stride(), bo.get_stride())
-            # assume all carried_inputs and outputs are on the same device
-            # as the MultiOutputLayout below requires single device
-            assert op.get_device() == bo.get_device(), (i, op, bo, device)
-            assert op.get_dtype() == bo.get_dtype(), (i, op, bo)
-            assert op.get_layout().offset == bo.get_layout().offset, (i, op, bo)
+                _guard_list_equals(op.get_size(), bo.get_size())
+                _guard_list_equals(op.get_stride(), bo.get_stride())
+                # assume all carried_inputs and outputs are on the same device
+                # as the MultiOutputLayout below requires single device
+                assert op.get_device() == bo.get_device(), (i, op, bo, device)
+                assert op.get_dtype() == bo.get_dtype(), (i, op, bo)
+                assert op.get_layout().offset == bo.get_layout().offset, (i, op, bo)
+            else:
+                assert isinstance(op, ShapeAsConstantBuffer) and isinstance(
+                    bo, ShapeAsConstantBuffer
+                ), (i, op, bo)
 
+        unbacked_bindings = resolve_unbacked_bindings(
+            V.graph.sizevars.shape_env,
+            V.graph.current_node.meta.get("unbacked_bindings", None),
+        )
         while_loop = WhileLoop(
             carried_inputs=carried_inputs,
             additional_inputs=additional_inputs,
@@ -7500,37 +7543,59 @@ class WhileLoop(ExternKernel):
             body_subgraph=body_fn,
             # asserted above that there is at least one operand
             layout=MultiOutputLayout(device=device),
+            unbacked_bindings=unbacked_bindings,
         )
 
-        outputs = [
-            MultiOutput(
-                FixedLayout(
-                    device=output.get_device(),
-                    dtype=output.get_dtype(),
-                    size=output.get_size(),
-                    stride=output.get_stride(),
-                    offset=output.get_layout().offset,
-                ),
-                while_loop,
-                [(list, i)],
-            )
-            for i, output in enumerate(body_outputs)
-        ]
+        outputs: list[Union[MultiOutput, ShapeAsConstantBuffer]] = []
+        for i, (body_out, example_out) in enumerate(
+            zip(body_outputs, V.graph.current_node.meta["val"])
+        ):
+            if not isinstance(body_out, ShapeAsConstantBuffer):
+                outputs.append(
+                    MultiOutput(
+                        FixedLayout(
+                            device=body_out.get_device(),
+                            dtype=body_out.get_dtype(),
+                            size=body_out.get_size(),
+                            stride=body_out.get_stride(),
+                            offset=body_out.get_layout().offset,
+                        ),
+                        while_loop,
+                        [(list, i)],
+                    )
+                )
+            else:
+                assert isinstance(example_out, torch.SymInt), (i, body_out, example_out)
+                outputs.append(ShapeAsConstantBuffer(expr=example_out.node.expr))
 
         for inp, out in zip(carried_inputs, outputs):
-            if inp.get_name() in V.graph.graph_inputs:
-                # if a carried input of the while_loop is a graph input,
-                # it can be returned as is when the number of iterations
-                # is zero. due to this, we can't (generally) reuse the
-                # output buffers corresponding to the graph inputs, as
-                # the inputs may end up being mutated.
-                V.graph.never_reuse_buffers.add(out.get_name())
+            if not isinstance(inp, ShapeAsConstantBuffer):
+                if inp.get_name() in V.graph.graph_inputs:
+                    # if a carried input of the while_loop is a graph input,
+                    # it can be returned as is when the number of iterations
+                    # is zero. due to this, we can't (generally) reuse the
+                    # output buffers corresponding to the graph inputs, as
+                    # the inputs may end up being mutated
+                    V.graph.never_reuse_buffers.add(out.get_name())
 
         while_loop.outputs = outputs
         return outputs
 
     def codegen(self, wrapper) -> None:  # type: ignore[no-untyped-def]
         wrapper.codegen_while_loop(self)
+        wrapper.codegen_unbacked_symbol_defs_for_outputs(
+            self.get_name(), self.outputs, getattr(self, "unbacked_bindings", {})
+        )
+
+    def get_unbacked_symbol_defs(self) -> OrderedSet[sympy.Symbol]:
+        if unbacked_bindings := getattr(self, "unbacked_bindings", None):
+            resolved = resolve_unbacked_bindings(
+                V.graph.sizevars.shape_env, unbacked_bindings
+            )
+            assert resolved is not None
+            return resolved.keys()  # type: ignore[return-value]
+        else:
+            return OrderedSet()
 
 
 class EffectfulKernel(FallbackKernel):

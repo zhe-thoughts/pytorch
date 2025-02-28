@@ -905,6 +905,78 @@ class WhileLoopModels:
                 [c, a, b],
             )
 
+    class IntCarry(torch.nn.Module):
+        def forward(self, c, x):
+            def cond_fn(it, x):
+                return it < x.shape[0]
+
+            def body_fn(it, x):
+                x_clone = x.clone()
+                # Need these checks to select from x
+                torch._check(it >= 0)
+                torch._check(it < x.shape[0])
+                x_clone.select(0, it).copy_(x_clone.select(0, it) + it)
+                return it + 1, x_clone
+
+            # We invoke the hop directly to avoid triggering dyanmo tracing
+            out_it, out_x = torch._higher_order_ops.while_loop(cond_fn, body_fn, (0, x))
+            # We need torch._check to use it in torch.ones call
+            torch._check(out_it > 0)
+            return (
+                out_it + 1,
+                out_it + out_x,
+                out_it < x.shape[0],
+                torch.ones(out_it * 2),
+            )
+
+    class PytreeIntCarry(torch.nn.Module):
+        def forward(self, c, x):
+            import torch.utils._pytree as pytree
+
+            a = x.shape[0]
+            b = x.shape[1]
+
+            def cond_fn(shapes, const_int_dict, x):
+                a, b = shapes
+                c1, c2, c3 = const_int_dict["int_carry"]
+                return c1 * c2 * c3 < a * b
+
+            def body_fn(shapes, const_int_dict, x):
+                a, b = shapes
+                c1, c2, c3 = const_int_dict["int_carry"]
+                return (
+                    [a + 1, b + 1],
+                    {"int_carry": (c1 + 1, c2 + 1, c3 + 1)},
+                    x + 1,
+                )
+
+            carry = ([a, b], {"int_carry": (1, 1, 2)}, x.sin())
+            out_shapes, out_it, out_x = torch._higher_order_ops.while_loop(
+                cond_fn, body_fn, carry
+            )
+            out_inc = pytree.tree_map(lambda x: x + 1, out_it)
+            out_add = pytree.tree_map(lambda x: x + out_x, out_it)
+            return (out_shapes, out_inc, out_add, out_x)
+
+    class ConstAndSymIntOutput(torch.nn.Module):
+        def forward(self, c, t):
+            import torch.utils._pytree as pytree
+
+            a = t.shape[0]
+            b = t.shape[1]
+
+            def cond_fn(a, b, c1, c2, c3, c0, u0, x):
+                return c1 * c2 * c3 < a * b
+
+            def body_fn(a, b, c1, c2, c3, c0, u0, x):
+                return b, c1, c2, c3, a, 0, u0 + 1, x + 1
+
+            carry = (a, b, 1, 1, 1, a + 1, t.sum().to(torch.int64).item(), t.sin())
+            out_it = torch._higher_order_ops.while_loop(cond_fn, body_fn, carry)
+            out_inc = pytree.tree_map(lambda x: x + 1, out_it)
+            out_add = pytree.tree_map(lambda x: x + t, out_it)
+            return out_inc, out_add
+
     class SymExprCond(torch.nn.Module):
         def forward(self, c, a, b):
             d = a.sum().to(torch.int64).item()
@@ -1207,6 +1279,40 @@ class WhileLoopTests(TestCase):
                 torch.randn(10, 20),
                 torch.randn(10, 20),
             ),
+            device=device,
+            dynamic=dynamic,
+        )
+
+    @requires_gpu
+    @parametrize("device", ["cpu", GPU_TYPE])
+    @parametrize("dynamic", [True, False])
+    def test_while_loop_with_int_carry(self, device, dynamic):
+        self._run_test(
+            model=WhileLoopModels.IntCarry(),
+            inputs=(torch.randn(10, 20),),
+            device=device,
+            dynamic=dynamic,
+        )
+
+    @requires_gpu
+    @parametrize("device", ["cpu", GPU_TYPE])
+    @parametrize("dynamic", [True, False])
+    def test_while_loop_with_pytree_int_carry(self, device, dynamic):
+        self._run_test(
+            model=WhileLoopModels.PytreeIntCarry(),
+            inputs=(torch.randn(10, 20),),
+            device=device,
+            dynamic=dynamic,
+        )
+
+    @requires_gpu
+    @parametrize("device", ["cpu", GPU_TYPE])
+    @parametrize("dynamic", [True, False])
+    @torch._dynamo.config.patch({"capture_scalar_outputs": True})
+    def test_while_loop_with_const_and_symint_output(self, device, dynamic):
+        self._run_test(
+            model=WhileLoopModels.ConstAndSymIntOutput(),
+            inputs=(torch.randn(10, 20),),
             device=device,
             dynamic=dynamic,
         )
