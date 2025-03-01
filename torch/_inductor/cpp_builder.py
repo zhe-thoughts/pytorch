@@ -561,14 +561,19 @@ def _get_ffast_math_flags() -> list[str]:
     return flags
 
 
-def _get_optimization_cflags(cpp_compiler: str) -> list[str]:
+def _get_optimization_cflags(
+    cpp_compiler: str, min_optimize: bool = False
+) -> list[str]:
     if _IS_WINDOWS:
-        return ["O2"]
+        return ["O1" if min_optimize else "O2"]
     else:
-        cflags = ["O0", "g"] if config.aot_inductor.debug_compile else ["O3", "DNDEBUG"]
+        cflags = (
+            ["O0", "g"]
+            if config.aot_inductor.debug_compile
+            else ["O1" if min_optimize else "O3", "DNDEBUG"]
+        )
         cflags += _get_ffast_math_flags()
         cflags.append("fno-finite-math-only")
-
         if not config.cpp.enable_unsafe_math_opt_flag:
             cflags.append("fno-unsafe-math-optimizations")
         cflags.append(f"ffp-contract={config.cpp.enable_floating_point_contract_flag}")
@@ -612,6 +617,7 @@ def get_cpp_options(
     compile_only: bool,
     warning_all: bool = True,
     extra_flags: Sequence[str] = (),
+    min_optimize: bool = False,
 ) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str], list[str]]:
     definitions: list[str] = []
     include_dirs: list[str] = []
@@ -623,7 +629,7 @@ def get_cpp_options(
 
     cflags = (
         _get_shared_cflag(compile_only)
-        + _get_optimization_cflags(cpp_compiler)
+        + _get_optimization_cflags(cpp_compiler, min_optimize)
         + _get_warning_all_cflag(warning_all)
         + _get_cpp_std_cflag()
         + _get_os_related_cpp_cflags(cpp_compiler)
@@ -662,6 +668,7 @@ class CppOptions(BuildOptionsBase):
         compiler: str = "",
         precompiling: bool = False,
         preprocessing: bool = False,
+        min_optimize: bool = False,
     ) -> None:
         super().__init__(
             compile_only=compile_only,
@@ -684,6 +691,7 @@ class CppOptions(BuildOptionsBase):
             compile_only=compile_only,
             extra_flags=extra_flags,
             warning_all=warning_all,
+            min_optimize=min_optimize,
         )
 
         _append_list(self._definitions, definitions)
@@ -1140,6 +1148,7 @@ class CppTorchOptions(CppOptions):
         compiler: str = "",
         precompiling: bool = False,
         preprocessing: bool = False,
+        min_optimize: bool = False,
     ) -> None:
         super().__init__(
             compile_only=compile_only,
@@ -1149,6 +1158,7 @@ class CppTorchOptions(CppOptions):
             compiler=compiler,
             precompiling=precompiling,
             preprocessing=preprocessing,
+            min_optimize=min_optimize,
         )
 
         self._aot_mode = aot_mode
@@ -1307,6 +1317,7 @@ class CppTorchDeviceOptions(CppTorchOptions):
         extra_flags: Sequence[str] = (),
         precompiling: bool = False,
         preprocessing: bool = False,
+        min_optimize: bool = False,
     ) -> None:
         super().__init__(
             vec_isa=vec_isa,
@@ -1318,6 +1329,7 @@ class CppTorchDeviceOptions(CppTorchOptions):
             extra_flags=extra_flags,
             precompiling=precompiling,
             preprocessing=preprocessing,
+            min_optimize=min_optimize,
         )
 
         device_definitions: list[str] = []
@@ -1402,15 +1414,23 @@ class CppBuilder:
     """
 
     @staticmethod
-    def __get_python_module_flags() -> tuple[str, str]:
+    def __get_lto_flags() -> str:
+        if is_gcc():
+            return "-flto -fno-fat-lto-objects"
+        if is_clang():
+            return "-flto=thin"
+        return ""
+
+    @classmethod
+    def __get_python_module_flags(cls) -> tuple[str, str]:
         extension = ".pyd" if _IS_WINDOWS else ".so"
-        output_flags = "/Fe" if _IS_WINDOWS else "-o"
+        output_flags = "/Fe" if _IS_WINDOWS else f"{cls.__get_lto_flags()} -o"
         return extension, output_flags
 
-    @staticmethod
-    def __get_object_flags() -> tuple[str, str]:
+    @classmethod
+    def __get_object_flags(cls) -> tuple[str, str]:
         extension = ".obj" if _IS_WINDOWS else ".o"
-        output_flags = "/c /Fo" if _IS_WINDOWS else "-c -o"
+        output_flags = "/c /Fo" if _IS_WINDOWS else f"{cls.__get_lto_flags()} -c -o"
         return extension, output_flags
 
     @staticmethod
