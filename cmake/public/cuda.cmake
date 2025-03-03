@@ -340,7 +340,9 @@ foreach(diag cc_clobber_ignored
              base_class_has_different_dll_interface
              dll_interface_conflict_none_assumed
              dll_interface_conflict_dllexport_assumed
-             bad_friend_decl)
+             bad_friend_decl
+             # variable was declared but never referenced
+             177)
   list(APPEND SUPPRESS_WARNING_FLAGS --diag_suppress=${diag})
 endforeach()
 string(REPLACE ";" "," SUPPRESS_WARNING_FLAGS "${SUPPRESS_WARNING_FLAGS}")
