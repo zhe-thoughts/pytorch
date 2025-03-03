@@ -1,113 +1,65 @@
-from collections import namedtuple
-from typing import Any, Callable, Optional, TypeVar
-from typing_extensions import NamedTuple
+from typing import Any, Callable, Optional
+from typing_extensions import deprecated
 
-import torch.return_types
-from torch.utils._pytree import PyTree, tree_flatten, TreeSpec
+import torch.utils._pytree as python_pytree
+from torch.utils._pytree import PyTree, TreeSpec
 
 
 FlattenFuncSpec = Callable[[PyTree, TreeSpec], list]
 FlattenFuncExactMatchSpec = Callable[[PyTree, TreeSpec], bool]
 
-SUPPORTED_NODES: dict[type[Any], FlattenFuncSpec] = {}
-SUPPORTED_NODES_EXACT_MATCH: dict[type[Any], Optional[FlattenFuncExactMatchSpec]] = {}
 
-_T = TypeVar("_T")
-_K = TypeVar("_K")
-_V = TypeVar("_V")
-
-
+@deprecated(
+    "torch.fx._pytree.register_pytree_flatten_spec is deprecated and it is now a no-op. "
+    "Please register the class with `flatten_with_keys` function as pytree node instead.",
+    category=FutureWarning,
+)
 def register_pytree_flatten_spec(
     cls: type[Any],
     flatten_fn_spec: FlattenFuncSpec,
     flatten_fn_exact_match_spec: Optional[FlattenFuncExactMatchSpec] = None,
 ) -> None:
-    SUPPORTED_NODES[cls] = flatten_fn_spec
-    SUPPORTED_NODES_EXACT_MATCH[cls] = flatten_fn_exact_match_spec
+    # no-op, just check if the node is registered and has flatten_with_keys_fn
+    handler = python_pytree.SUPPORTED_NODES.get(cls)
+    if handler is None:
+        raise ValueError(
+            f"Unsupported node type {cls}, "
+            "please consider registering it as pytree node first."
+        )
+    if handler.flatten_with_keys_fn is None:
+        raise ValueError(
+            f"Unsupported node type {cls}, "
+            "please consider registering the pytree node with `flatten_with_keys` function first."
+        )
 
 
-def _deregister_pytree_flatten_spec(
-    cls: type[Any],
-) -> None:
-    del SUPPORTED_NODES[cls]
-    del SUPPORTED_NODES_EXACT_MATCH[cls]
+@deprecated(
+    "torch.fx._pytree._deregister_pytree_flatten_spec is deprecated and it is now a no-op. ",
+    category=FutureWarning,
+)
+def _deregister_pytree_flatten_spec(cls: type[Any]) -> None:
+    pass
 
 
+# The pytree may be wrapped with torch.fx.Proxy, so we cannot use `treespec.flatten_up_to(pytree)`.
+# Use the key path API to index into the pytree instead.
 def tree_flatten_spec(
     pytree: PyTree,
     spec: TreeSpec,
 ) -> list[Any]:
-    if spec.is_leaf():
-        return [pytree]
-    # I guess these exist for BC, FC reasons.
-    # In general, we should be able to directly
-    # use pytree tree flattener to flatten them,
-    # as export serializes the pytree seperately.
-    # Will remove it in follow up PR.
-    if spec.type in SUPPORTED_NODES:
-        flatten_fn_spec = SUPPORTED_NODES[spec.type]
-        child_pytrees = flatten_fn_spec(pytree, spec)
-        result = []
-        for child, child_spec in zip(child_pytrees, spec.children()):
-            flat = tree_flatten_spec(child, child_spec)
-            result += flat
-        return result
-    flat_result, real_spec = tree_flatten(pytree)
-    if spec != real_spec:
-        raise RuntimeError(
-            f"Real spec {real_spec} of object {pytree} is different from expected spec {spec}. "
-            f"Please file an issue at https://github.com/pytorch/pytorch/issues/new?template=bug-report.yml"
-        )
-    return flat_result
+    if not isinstance(spec, TreeSpec):
+        assert python_pytree._cxx_pytree_exists, "C++ PyTree is not available"
 
+        from torch.utils._cxx_pytree import PyTreeSpec
 
-def _dict_flatten_spec(d: dict[_K, _V], spec: TreeSpec) -> list[_V]:
-    return [d[k] for k in spec.context]
+        assert isinstance(spec, PyTreeSpec), "Expected a PyTreeSpec"
+        return [accessor(pytree) for accessor in spec.accessors()]
 
-
-def _list_flatten_spec(d: list[_T], spec: TreeSpec) -> list[_T]:
-    return [d[i] for i in range(spec.num_children)]
-
-
-def _tuple_flatten_spec(d: tuple[_T, ...], spec: TreeSpec) -> list[_T]:
-    return [d[i] for i in range(spec.num_children)]
-
-
-def _namedtuple_flatten_spec(d: NamedTuple, spec: TreeSpec) -> list[Any]:
-    return [d[i] for i in range(spec.num_children)]
-
-
-def _dict_flatten_spec_exact_match(d: dict[_K, _V], spec: TreeSpec) -> bool:
-    return len(d) == spec.num_children
-
-
-def _list_flatten_spec_exact_match(d: list[_T], spec: TreeSpec) -> bool:
-    return len(d) == spec.num_children
-
-
-def _tuple_flatten_spec_exact_match(d: tuple[_T, ...], spec: TreeSpec) -> bool:
-    return len(d) == spec.num_children
-
-
-def _namedtuple_flatten_spec_exact_match(d: NamedTuple, spec: TreeSpec) -> bool:
-    return len(d) == spec.num_children
-
-
-register_pytree_flatten_spec(dict, _dict_flatten_spec, _dict_flatten_spec_exact_match)
-register_pytree_flatten_spec(list, _list_flatten_spec, _list_flatten_spec_exact_match)
-register_pytree_flatten_spec(
-    tuple,
-    _tuple_flatten_spec,
-    _tuple_flatten_spec_exact_match,
-)
-for return_type in torch.return_types.all_return_types:
-    register_pytree_flatten_spec(
-        return_type,
-        _tuple_flatten_spec,
-        _tuple_flatten_spec_exact_match,
-    )
-register_pytree_flatten_spec(
-    namedtuple,  # type: ignore[arg-type]
-    _namedtuple_flatten_spec,
-    _namedtuple_flatten_spec_exact_match,
-)
+    # FX `tracer.create_arg(x)` and Dynamo does not support `dummy_leaf = object()`
+    # as a sentinel value. Use None here.
+    dummy_leaf = None
+    dummy_tree = python_pytree.tree_unflatten([dummy_leaf] * spec.num_leaves, spec)
+    return [
+        python_pytree.key_get(pytree, key_path)
+        for key_path, _ in python_pytree.tree_leaves_with_path(dummy_tree)
+    ]
