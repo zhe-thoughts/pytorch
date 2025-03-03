@@ -377,6 +377,9 @@ list(APPEND CUDA_NVCC_FLAGS "--expt-relaxed-constexpr")
 
 # Set expt-extended-lambda to support lambda on device
 list(APPEND CUDA_NVCC_FLAGS "--expt-extended-lambda")
+if(WERROR)
+  list(APPEND CUDA_NVCC_FLAGS "--Werror" "all-warnings")
+endif()
 
 foreach(FLAG ${CUDA_NVCC_FLAGS})
   string(FIND "${FLAG}" " " flag_space_position)
