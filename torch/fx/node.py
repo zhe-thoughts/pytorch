@@ -8,7 +8,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Callable, Optional, TYPE_CHECKING, TypeVar, Union
 
 import torch
-from torch._C import _fx_map_aggregate, _fx_map_arg, _NodeBase
+from torch._C import _fx_map_arg, _NodeBase
+from torch.fx.immutable_collections import immutable_dict, immutable_list
 from torch.fx.operator_schemas import (
     ArgsKwargsPair,
     normalize_function,
@@ -821,7 +822,7 @@ def map_arg(a: ArgumentT, fn: Callable[[Node], Argument]) -> ArgumentT:
     have the same type and structure.
     """
     assert callable(fn), "torch.fx.map_arg(a, fn): fn must be a callable"
-    return _fx_map_arg(a, fn)
+    return map_aggregate(a, lambda x: fn(x) if isinstance(x, Node) else x)
 
 
 @compatibility(is_backward_compatible=True)
@@ -832,4 +833,19 @@ def map_aggregate(a: ArgumentT, fn: Callable[[Argument], Argument]) -> ArgumentT
     arg may be a list, tuple, slice, or dict with string keys: the return value will
     have the same type and structure.
     """
-    return _fx_map_aggregate(a, fn)
+    from torch.utils._cxx_pytree import tree_map
+
+    def func(x: Argument) -> Argument:
+        if isinstance(x, list):
+            return immutable_list([map_aggregate(i, fn) for i in x])
+        if isinstance(x, dict):
+            return immutable_dict([(k, map_aggregate(v, fn)) for k, v in x.items()])
+        if isinstance(x, slice):
+            return slice(
+                map_aggregate(x.start, fn),
+                map_aggregate(x.stop, fn),
+                map_aggregate(x.step, fn),
+            )
+        return fn(x)
+
+    return tree_map(func, a, is_leaf=lambda x: isinstance(x, (list, dict)))
