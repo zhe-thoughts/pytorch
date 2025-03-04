@@ -17,7 +17,6 @@ from torch._inductor.virtualized import V
 from .. import config as inductor_config, ir
 from ..codegen.cuda.gemm_template import CUTLASS2xGemmTemplate, CUTLASS3xGemmTemplate
 from ..codegen.rocm.ck_universal_gemm_template import CKGemmTemplate
-from ..codegen.wrapper import PythonWrapperCodegen
 from ..ir import FlexibleLayout, is_triton
 from ..lowering import register_lowering
 from ..select_algorithm import (
@@ -596,23 +595,14 @@ def tuned_addmm(inp, mat1, mat2, *, alpha=1, beta=1, layout=None):
                 )
 
     if static_shape and is_nonzero and use_cutlass_template(layout, m, n, k):
-        # Filter out a known cause of CUDA illegal memory access errors
-        # broadcasting on the last dim of the bias term seems not to be working
-        # in the linear GEMM epilogue used by addmm.
-        if (
-            PythonWrapperCodegen.statically_known_int_or_none(
-                inp_expanded.layout.stride[-1]
-            )
-            != 0
-        ):
-            CUTLASS3xGemmTemplate.add_cutlass_gemm_choices(
-                choices,
-                layout,
-                [mat1, mat2, inp_expanded],
-                alpha=alpha,
-                beta=beta,
-                input_reorder=[2, 0, 1],
-            )
+        CUTLASS3xGemmTemplate.add_cutlass_gemm_choices(
+            choices,
+            layout,
+            [mat1, mat2, inp_expanded],
+            alpha=alpha,
+            beta=beta,
+            input_reorder=[2, 0, 1],
+        )
 
     if is_nonzero and use_ck_gemm_template(layout, m, n, k):
         CKGemmTemplate.add_ck_gemm_choices(
