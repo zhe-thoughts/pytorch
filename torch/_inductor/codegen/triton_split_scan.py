@@ -130,7 +130,7 @@ class TritonSplitScanKernel(TritonKernel):
             f"{scratch_elems_per_block} * {runtime_rblocks}"
         )
 
-        masks = OrderedSet(f"{tree.prefix}mask" for tree in self.range_trees)
+        masks = OrderedSet([f"{tree.prefix}mask" for tree in self.range_trees])
         self.filter_masks(masks)
         assert not self._load_mask, "ops.scan not supported inside ops.masked"
 

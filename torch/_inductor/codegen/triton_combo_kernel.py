@@ -72,7 +72,7 @@ def _default_custom_combo_kernel_horizontal_partition(
     # first partition nodes based on number of block dimensions
     tilings = [node_info_map[n][1] for n in nodes]
 
-    max_dims = max(len(t) for t in tilings)
+    max_dims = max([len(t) for t in tilings])
     nodes_per_ndim: list[list[BaseSchedulerNode]] = []
     for i in range(2, max_dims + 1):
         group_per_dim = [n for n, t in zip(nodes, tilings) if len(t) == i]
@@ -110,13 +110,13 @@ def _default_custom_combo_kernel_horizontal_partition(
                 len(large_pointwise),
             )
             not_reduction = [n for n in not_reduction if n not in large_pointwise]
-            nodes_per_ndim.extend([node] for node in large_pointwise)
+            nodes_per_ndim.extend([[node] for node in large_pointwise])
 
         nodes_per_ndim.extend(
-            g for g in (not_reduction, short_reduction, long_reduction) if g
+            [g for g in (not_reduction, short_reduction, long_reduction) if g]
         )
 
-    assert sum(len(p) for p in nodes_per_ndim) == len(nodes)
+    assert sum([len(p) for p in nodes_per_ndim]) == len(nodes)
     return nodes_per_ndim
 
 
@@ -860,7 +860,7 @@ class ComboKernel(Kernel):
             )
         )
         code.writeline(
-            f"def {name or str(Placeholder.KERNEL_NAME)}({', '.join(x.full_name() for x in argdefs)}):"
+            f"def {name or str(Placeholder.KERNEL_NAME)}({', '.join([x.full_name() for x in argdefs])}):"
         )
 
         with code.indent():
@@ -949,14 +949,16 @@ class ComboKernel(Kernel):
                 self.add_numel_to_call_args_and_grid_benchmark(extra_args, grid_tuple)
                 # convert nested list to list of str
                 grid_tuple = tuple(
-                    "[" + ", ".join(pexpr(item) for item in e) + ",]"
-                    for e in grid_tuple
+                    [
+                        "[" + ", ".join([pexpr(item) for item in e]) + ",]"
+                        for e in grid_tuple
+                    ]
                 )
                 extra_args_str = ", ".join(map(str, extra_args)) + ", "
                 min_blocks = None
             else:
                 min_blocks = max(self.min_x_blocks_list) * len(self.sub_kernels)
-            grid_str = ", ".join(pexpr(item) for item in grid_tuple)
+            grid_str = ", ".join([pexpr(item) for item in grid_tuple])
             grid_extra_kwargs = (
                 f"num_kernels={len(self.sub_kernels)}, "
                 f"min_blocks={min_blocks}, "

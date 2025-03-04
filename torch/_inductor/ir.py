@@ -490,7 +490,7 @@ class IRNode:
         self._post_init_setattr("origin_node", None)
 
     def get_read_names(self) -> OrderedSet[str]:
-        return OrderedSet(dep.name for dep in self.get_reads())
+        return OrderedSet([dep.name for dep in self.get_reads()])
 
     def get_traceback(self) -> Optional[list[str]]:
         return self.traceback
@@ -734,7 +734,7 @@ class Operation:
         return name in self.get_read_names()
 
     def get_read_names(self) -> OrderedSet[str]:
-        return OrderedSet(dep.name for dep in self.get_reads())
+        return OrderedSet([dep.name for dep in self.get_reads()])
 
     def get_reads(self) -> OrderedSet[Dep]:
         return self.get_read_writes().reads
@@ -1760,7 +1760,7 @@ class WelfordReduction(Reduction):
             def loader(
                 idx: Sequence[Expr], reduction_idx: Sequence[Expr]
             ) -> tuple[OpsValue, ...]:
-                return tuple(fn(idx, reduction_idx) for fn in inner_fns)
+                return tuple([fn(idx, reduction_idx) for fn in inner_fns])
 
         super().__init__(
             device=device,
@@ -1844,7 +1844,7 @@ class WelfordReduction(Reduction):
             if reduction_type == "welford_reduce":
                 return copy(inner_fns[0]), const(0), const(1)
             else:
-                return tuple(copy(fn) for fn in inner_fns)
+                return tuple([copy(fn) for fn in inner_fns])
 
         # TODO: Unrolled reduction
         # if (
@@ -1966,15 +1966,17 @@ class WelfordReduction(Reduction):
             device,
             dtype,
             tuple(
-                cls._multilayer_wrap_loader(
-                    loader,
-                    reduction_ranges,
-                    reduction_numel,
-                    split,
-                    block_size,
-                    default=0,
-                )
-                for loader in inner_fns
+                [
+                    cls._multilayer_wrap_loader(
+                        loader,
+                        reduction_ranges,
+                        reduction_numel,
+                        split,
+                        block_size,
+                        default=0,
+                    )
+                    for loader in inner_fns
+                ]
             ),
             [*ranges, split],
             [block_size],
@@ -1999,8 +2001,10 @@ class WelfordReduction(Reduction):
             device,
             dtype,
             tuple(
-                partial(intermediate_loader_fn, loader=i.make_loader())
-                for i in intermediates
+                [
+                    partial(intermediate_loader_fn, loader=i.make_loader())
+                    for i in intermediates
+                ]
             ),
             ranges,
             [split],
@@ -2046,7 +2050,7 @@ class Scan(Loops):
         scan_vars: Sequence[Symbol],
     ) -> None:
         idx = self.reindex(vars, scan_vars)
-        values = tuple(inner_fn(idx) for inner_fn in self.inner_fns)
+        values = tuple([inner_fn(idx) for inner_fn in self.inner_fns])
         result = ops.scan(self.dtypes, self.combine_fn, values)
         return ops.store(
             output_name or "unnamed", indexer(idx), result[self.output_index]
@@ -2246,7 +2250,7 @@ class Sort(Loops):
         reduction_vars: Sequence[Expr],
     ) -> None:
         idx = self.reindex(vars, reduction_vars)
-        values = tuple(inner_fn(idx) for inner_fn in self.inner_fns)
+        values = tuple([inner_fn(idx) for inner_fn in self.inner_fns])
         result = ops.sort(self.dtypes, values, self.stable, self.descending)
         return ops.store(
             output_name or "unnamed", indexer(idx), result[self.output_index]
@@ -2905,7 +2909,7 @@ class View(GenericView):
         def reindex(index):  # type: ignore[no-untyped-def]
             assert len(index) == len(vars), (len(index), len(vars))
             replacements = dict(zip(vars, index))
-            return tuple(sympy_subs(x, replacements) for x in view_expr)
+            return tuple([sympy_subs(x, replacements) for x in view_expr])
 
         return reindex
 
@@ -4564,7 +4568,7 @@ class InputsKernel(OperationBuffer):
         StarDep = dependencies.StarDep
         for input in self.inputs:
             if isinstance(input, list):
-                reads.update(StarDep(x.get_name()) for x in input)
+                reads.update([StarDep(x.get_name()) for x in input])
             elif isinstance(input, ShapeAsConstantBuffer):
                 # Skip creating dependncy for symbolics as they're visible globally
                 continue
@@ -5805,7 +5809,7 @@ class UserDefinedTritonKernel(ExternKernel):
             # changes kernel.restore_idx to kernel.restore_value
             if hasattr(kernel, "restore_idx"):
                 restore_value_args.extend(
-                    kernel.fn.arg_names[i] for i in kernel.restore_idx
+                    [kernel.fn.arg_names[i] for i in kernel.restore_idx]
                 )
             else:
                 assert hasattr(kernel, "restore_value")
@@ -6538,7 +6542,7 @@ class FallbackKernel(ExternKernelAlloc):
             return example_output.device
         if isinstance(example_output, (list, tuple)):
             device_set = OrderedSet(
-                FallbackKernel.find_device(None, x) for x in example_output
+                [FallbackKernel.find_device(None, x) for x in example_output]
             )
             # Remove None
             devices = [device for device in device_set if device]
@@ -7152,7 +7156,7 @@ def _has_aliased_buffers(buffers: Sequence[IRNode]) -> bool:
         for buffer in buffers
     ]
     # assuming the same buffer is represented by the same IRNode object
-    return len(OrderedSet(id(buffer) for buffer in buffers)) < len(buffers)
+    return len(OrderedSet([id(buffer) for buffer in buffers])) < len(buffers)
 
 
 @ir_dataclass(frozen=False)

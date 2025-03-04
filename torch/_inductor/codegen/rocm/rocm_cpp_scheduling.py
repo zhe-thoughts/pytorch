@@ -25,7 +25,7 @@ class ROCmCPPScheduling(BaseScheduling):
     """
 
     def group_fn(self, sizes):
-        return tuple(V.graph.sizevars.simplify(sympy_product(s)) for s in sizes)
+        return tuple([V.graph.sizevars.simplify(sympy_product(s)) for s in sizes])
 
     @staticmethod
     def is_rocm_cpp_template(node: BaseSchedulerNode) -> bool:

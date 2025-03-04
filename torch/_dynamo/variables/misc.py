@@ -614,8 +614,10 @@ class AutogradFunctionContextVariable(UserDefinedObjectVariable):
         needs_input_grad = None
         if args and not kwargs:
             needs_input_grad = tuple(
-                isinstance(x, variables.TensorVariable) and x.requires_grad
-                for x in args
+                [
+                    isinstance(x, variables.TensorVariable) and x.requires_grad
+                    for x in args
+                ]
             )
         proxy = tx.output.create_proxy(
             "call_function", torch.autograd.function.FunctionCtx, (), {}

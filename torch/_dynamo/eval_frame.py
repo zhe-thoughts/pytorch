@@ -1318,10 +1318,12 @@ def rewrite_signature(
             )
             # Get default values for positional arguments and keyword-only arguments
             defaults = tuple(
-                p.default
-                for p in params
-                if p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
-                and p.default is not inspect.Parameter.empty
+                [
+                    p.default
+                    for p in params
+                    if p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+                    and p.default is not inspect.Parameter.empty
+                ]
             )
             kwonlydefaults = {
                 p.name: p.default

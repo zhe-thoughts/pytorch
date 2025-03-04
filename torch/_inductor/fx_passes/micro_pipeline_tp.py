@@ -53,7 +53,7 @@ def _find_ancestors(node: torch.fx.Node) -> OrderedSet[torch.fx.Node]:
                     ancestors.add(inp)
                     new_nodes.append(inp)
         cur_nodes = new_nodes
-    return OrderedSet(node for node in ancestors if node.op != "placeholder")
+    return OrderedSet([node for node in ancestors if node.op != "placeholder"])
 
 
 def _get_tensor(node: torch.fx.Node) -> torch.Tensor:

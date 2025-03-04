@@ -161,12 +161,16 @@ class CppWrapperCpuArrayRef(CppWrapperCpu):
                 and not V.graph.is_const_graph
             ):
                 input_cpp_types = ", ".join(
-                    f"{CppWrapperCpuArrayRef.get_input_cpp_type(x)}"
-                    for x in V.graph.graph_inputs.values()
+                    [
+                        f"{CppWrapperCpuArrayRef.get_input_cpp_type(x)}"
+                        for x in V.graph.graph_inputs.values()
+                    ]
                 )
                 output_arrayref_types = ", ".join(
-                    f"ArrayRefTensor<{DTYPE_TO_CPP[x.get_dtype()]}>"
-                    for x in V.graph.graph_outputs
+                    [
+                        f"ArrayRefTensor<{DTYPE_TO_CPP[x.get_dtype()]}>"
+                        for x in V.graph.graph_outputs
+                    ]
                 )
 
                 self.prefix.splice(
@@ -533,7 +537,7 @@ class CppWrapperCpuArrayRef(CppWrapperCpu):
         # conservatively use the sum of all allocated buffer sizes
         # in potentially nested scopes as the total allocated size
         total_allocated_buffer_size = sum(
-            s.total_allocated_buffer_size for s in past_planning_states
+            [s.total_allocated_buffer_size for s in past_planning_states]
         )
 
         self.allow_stack_allocation = (

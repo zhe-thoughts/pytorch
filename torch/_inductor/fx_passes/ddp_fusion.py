@@ -579,7 +579,7 @@ def fuse_ddp_communication(
             else:
                 func = pa
             if "bucket_size_mb" in OrderedSet(
-                v.name for v in inspect.signature(func).parameters.values()
+                [v.name for v in inspect.signature(func).parameters.values()]
             ):
                 func(graph, bucket_size_mb=bucket_size_mb)
             else:

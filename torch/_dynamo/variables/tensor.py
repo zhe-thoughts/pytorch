@@ -679,7 +679,7 @@ class TensorVariable(VariableTracker):
                 if not has_free_symbols(fake_r):
                     # int conversion for safety, in case a SymInt refined
                     # to constant
-                    return RetVariable(tuple(int(r) for r in fake_r))
+                    return RetVariable(tuple([int(r) for r in fake_r]))
             else:
                 fake_r = getattr(fake, name)(dim)
                 if not has_free_symbols(fake_r):
@@ -1336,7 +1336,7 @@ class NumpyNdarrayVariable(TensorVariable):
             return ConstantVariable.create(getattr(example_ndarray, name))
         elif name in ("shape", "stride"):
             if not has_free_symbols(r := getattr(example_ndarray, name)):
-                return ConstantVariable.create(tuple(int(r) for r in r))
+                return ConstantVariable.create(tuple([int(r) for r in r]))
             return insert_into_graph()
         elif name == "size":
             if not has_free_symbols(r := example_ndarray.size):

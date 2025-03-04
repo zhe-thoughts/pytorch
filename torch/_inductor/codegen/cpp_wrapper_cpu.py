@@ -583,7 +583,7 @@ class CppWrapperCpu(PythonWrapperCodegen):
             self.initialized_kernels.keys()
         )
         declare_kernel.update(
-            entry[0] for entry in self.user_defined_kernel_cache.values()
+            [entry[0] for entry in self.user_defined_kernel_cache.values()]
         )
         if V.graph.const_module:
             declare_kernel.update(
@@ -1310,7 +1310,7 @@ class CppWrapperCpu(PythonWrapperCodegen):
         )
 
     def make_free_by_names(self, names_to_del: list[str]):
-        return " ".join(f"{name}.reset();" for name in names_to_del)
+        return " ".join([f"{name}.reset();" for name in names_to_del])
 
     def codegen_exact_buffer_reuse(self, old_name: str, new_name: str, del_line: str):
         return f"auto {new_name} = std::move({old_name});  // reuse"
@@ -2314,7 +2314,7 @@ if (custom_op_wrapper.get() == NULL) {
             return self.generate_float_value(val)
         elif isinstance(val, (list, tuple)):
             # FIXME: This happens because type_ is not always properly set to torch.ListType
-            return f"{{{', '.join(self.val_to_arg_str(x, None) for x in val)}}}"
+            return f"{{{', '.join([self.val_to_arg_str(x, None) for x in val])}}}"
         elif isinstance(val, SymTypes):
             return cexpr(val.node.expr)
         elif isinstance(val, sympy.Expr):
@@ -2397,7 +2397,7 @@ if (custom_op_wrapper.get() == NULL) {
                     f"const {self.c_type_for_prim_type(None, element_type)}* {var_name} = nullptr;"
                 )
             else:
-                result = f"{{{', '.join(self.val_to_arg_str(x, element_type) for x in val)}}}"
+                result = f"{{{', '.join([self.val_to_arg_str(x, element_type) for x in val])}}}"
                 self.writeline(
                     f"const {self.c_type_for_prim_type(val[0], element_type)} {var_name}[] = {result};"
                 )

@@ -2253,7 +2253,7 @@ class CUDAGraphTreeManager:
             model,
             list(static_input_idxs),
             id,
-            tuple(t for t in constants if isinstance(t, torch.Tensor) and t.is_cuda),
+            tuple([t for t in constants if isinstance(t, torch.Tensor) and t.is_cuda]),
             placeholders,
             mutated_input_idxs,
         )

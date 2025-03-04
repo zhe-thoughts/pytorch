@@ -230,7 +230,7 @@ class IndexPropagation(DefaultHandler):
 
     def unwrap(self, a: Union[Any, IndexPropVar]) -> Any:
         if isinstance(a, (list, tuple)):
-            return tuple(self.unwrap(v) for v in a)
+            return tuple([self.unwrap(v) for v in a])
 
         if not isinstance(a, IndexPropVar):
             return a
@@ -243,7 +243,7 @@ class IndexPropagation(DefaultHandler):
 
     def wrap(self, a) -> IndexPropResult:
         if isinstance(a, (list, tuple)):
-            return tuple(self.wrap(v) for v in a)
+            return tuple([self.wrap(v) for v in a])
         return IndexPropVar(a)
 
     @overload

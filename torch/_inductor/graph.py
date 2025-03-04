@@ -154,7 +154,7 @@ def may_get_constant_buffer_dtype(constant_buffer: sympy.Expr) -> Optional[torch
 
 
 def is_magic_method(op: Any) -> bool:
-    magic_ops = OrderedSet(method_to_operator(m) for m in magic_methods)
+    magic_ops = OrderedSet([method_to_operator(m) for m in magic_methods])
     return op in magic_ops
 
 
@@ -1721,8 +1721,10 @@ class GraphLowering(torch.fx.Interpreter):
                 for buf in self.buffers[buffer_watermark:]
             ]
             r.extend(
-                f"unbacked_symbol_defs={op.get_unbacked_symbol_defs()} in:\n{op}\n"
-                for op in self.operations[operation_watermark:]
+                [
+                    f"unbacked_symbol_defs={op.get_unbacked_symbol_defs()} in:\n{op}\n"
+                    for op in self.operations[operation_watermark:]
+                ]
             )
             return "***\n".join(r)
 
@@ -1804,8 +1806,10 @@ class GraphLowering(torch.fx.Interpreter):
             # symbol is likely to hit lots of GuardOnDataDependent errors that
             # we already know facts for.
             renamed_unbacked_bindings = OrderedSet(
-                V.fake_mode.shape_env.unbacked_renamings.get(s, s)
-                for s in unbacked_bindings.keys()
+                [
+                    V.fake_mode.shape_env.unbacked_renamings.get(s, s)
+                    for s in unbacked_bindings.keys()
+                ]
             )
             assert new_unbacked_defs >= renamed_unbacked_bindings, (
                 f"failed {new_unbacked_defs} >= {renamed_unbacked_bindings} (inductor >= fx)\n"

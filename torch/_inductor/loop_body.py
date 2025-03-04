@@ -554,7 +554,7 @@ class CaptureIndexing(WrapperHandler):
     def reduction(self, dtype, src_dtype, reduction_type, value):
         result = self._inner.reduction(dtype, src_dtype, reduction_type, value)
         if "welford" in reduction_type:
-            return tuple(result[i] for i in range(3))
+            return tuple([result[i] for i in range(3)])
         return result
 
     def index_expr(self, index, dtype):
@@ -645,12 +645,12 @@ class CaptureIndexing(WrapperHandler):
             {},
         )
         # Proxies are iterable, but some methods expect tuples/lists
-        return tuple(result[i] for i in range(len(value_proxy)))
+        return tuple([result[i] for i in range(len(value_proxy))])
 
     def sort(self, dtypes, values, stable, descending):
         result = self._inner.sort(dtypes, values, stable, descending)
         # Proxies are iterable, but some methods expect tuples/lists
-        return tuple(result[i] for i in range(len(values)))
+        return tuple([result[i] for i in range(len(values))])
 
     def frexp(self, value_proxy):
         result = self._inner.frexp(value_proxy)

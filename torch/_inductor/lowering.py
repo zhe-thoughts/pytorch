@@ -203,7 +203,7 @@ def add_needs_realized_inputs(fn):
     needs_realized_inputs.add(fn)
     if isinstance(fn, torch._ops.OpOverloadPacket):
         needs_realized_inputs.update(
-            getattr(fn, overload) for overload in fn.overloads()
+            [getattr(fn, overload) for overload in fn.overloads()]
         )
 
 
@@ -344,7 +344,7 @@ def transform_args(
                 if isinstance(a, (Number, sympy.Basic)) or hasattr(a, "dtype")
             ]
             # only consider tensor kwargs for promotion, for now
-            promoting_args.extend(a for a in kwargs.values() if hasattr(a, "dtype"))
+            promoting_args.extend([a for a in kwargs.values() if hasattr(a, "dtype")])
             dtype = get_promoted_dtype(
                 *promoting_args,
                 type_promotion_kind=type_promotion_kind,  # type: ignore[arg-type]
@@ -1008,7 +1008,7 @@ def squeeze(x, dim=None):
     dim = (
         V.graph.sizevars.evaluate_static_shape(dim)
         if isinstance(dim, (int, sympy.Expr))
-        else tuple(V.graph.sizevars.evaluate_static_shape(d) for d in dim)
+        else tuple([V.graph.sizevars.evaluate_static_shape(d) for d in dim])
     )
     dim = canonicalize_dims(len(x.get_size()), dim)  # type: ignore[call-overload]
     dims = OrderedSet((dim,) if not isinstance(dim, tuple) else dim)
@@ -2433,7 +2433,7 @@ def constrain_to_fake_tensors(args, kwargs, fake_args, fake_kwargs):
         return arg
 
     args = tuple(
-        apply_constraint(arg, fake_arg) for arg, fake_arg in zip(args, fake_args)
+        [apply_constraint(arg, fake_arg) for arg, fake_arg in zip(args, fake_args)]
     )
     kwargs = {k: apply_constraint(v, fake_kwargs[k]) for k, v in kwargs.items()}
     return args, kwargs
@@ -2451,7 +2451,7 @@ def constrain_to_fx_strides(fx_node, *args, **kwargs):
         return arg
 
     args = tuple(
-        apply_constraint(arg, fx_arg) for arg, fx_arg in zip(args, fx_node.args)
+        [apply_constraint(arg, fx_arg) for arg, fx_arg in zip(args, fx_node.args)]
     )
     kwargs = {k: apply_constraint(v, fx_node.kwargs[k]) for k, v in kwargs.items()}
     return args, kwargs
@@ -2584,8 +2584,10 @@ def sdpa_constraint(fx_node, *args, **kwargs):
         return ir.ExternKernel.require_stride_order(arg, stride_order)
 
     args = tuple(
-        apply_constraint(idx, arg, fx_arg)
-        for idx, (arg, fx_arg) in enumerate(zip(args, fx_node.args))
+        [
+            apply_constraint(idx, arg, fx_arg)
+            for idx, (arg, fx_arg) in enumerate(zip(args, fx_node.args))
+        ]
     )
     kwargs = {k: apply_constraint(-1, v, fx_node.kwargs[k]) for k, v in kwargs.items()}
     return args, kwargs
@@ -4060,7 +4062,7 @@ def _upsample_nearest_exact3d(
 
 
 def _create_constants(*args, dtype):
-    return tuple(ops.constant(a, dtype) for a in args)
+    return tuple([ops.constant(a, dtype) for a in args])
 
 
 @register_lowering(prims.rev.default)
@@ -4572,12 +4574,16 @@ def max_pool2d_with_indices_backward(
     new_size = list(x.get_size())
 
     h_window_size = max(
-        max(h // stride[0] - max(0, (h - kernel_size[0]) // stride[0]), 1)
-        for h in range(kernel_size[0] * 2)
+        [
+            max(h // stride[0] - max(0, (h - kernel_size[0]) // stride[0]), 1)
+            for h in range(kernel_size[0] * 2)
+        ]
     )
     w_window_size = max(
-        max(w // stride[1] - max(0, (w - kernel_size[1]) // stride[1]), 1)
-        for w in range(kernel_size[1] * 2)
+        [
+            max(w // stride[1] - max(0, (w - kernel_size[1]) // stride[1]), 1)
+            for w in range(kernel_size[1] * 2)
+        ]
     )
 
     window_size = h_window_size * w_window_size
@@ -5319,12 +5325,16 @@ def avg_pool2d_backward(
     dtype = x.get_dtype()
 
     h_window_size = max(
-        max(h // stride[0] - max(0, (h - kernel_size[0]) // stride[0]), 1)
-        for h in range(kernel_size[0] * 2)
+        [
+            max(h // stride[0] - max(0, (h - kernel_size[0]) // stride[0]), 1)
+            for h in range(kernel_size[0] * 2)
+        ]
     )
     w_window_size = max(
-        max(w // stride[1] - max(0, (w - kernel_size[1]) // stride[1]), 1)
-        for w in range(kernel_size[1] * 2)
+        [
+            max(w // stride[1] - max(0, (w - kernel_size[1]) // stride[1]), 1)
+            for w in range(kernel_size[1] * 2)
+        ]
     )
 
     window_size = h_window_size * w_window_size
@@ -5495,8 +5505,10 @@ def avg_pool3d_backward(
 
     d_window_size, h_window_size, w_window_size = (
         max(
-            max(d // stride[i] - max(0, (d - kernel_size[i]) // stride[i]), 1)
-            for d in range(kernel_size[i] * 2)
+            [
+                max(d // stride[i] - max(0, (d - kernel_size[i]) // stride[i]), 1)
+                for d in range(kernel_size[i] * 2)
+            ]
         )
         for i in range(3)
     )
@@ -5867,7 +5879,7 @@ def var_mean_helper_(x, *, axis, correction, keepdim, return_mean):
         if use_two_step_variance(x, axis=axis, keepdim=keepdim)
         else var_mean_welford_(**kwargs)
     )
-    output = tuple(to_dtype(x, out_dtype, copy=False) for x in output)
+    output = tuple([to_dtype(x, out_dtype, copy=False) for x in output])
     return output[0] if not return_mean else output
 
 
@@ -6887,8 +6899,8 @@ def associative_scan(
         )
 
     kwargs = _make_scan_inner(xs[0], axis=0, dtype=None)
-    kwargs["dtypes"] = tuple(x.get_dtype() for x in xs)
-    kwargs["inner_fns"] = tuple(x.make_loader() for x in xs)
+    kwargs["dtypes"] = tuple([x.get_dtype() for x in xs])
+    kwargs["inner_fns"] = tuple([x.make_loader() for x in xs])
     result = ir.Scan.create(
         combine_fn=wrapped_combine_fn,
         can_fallback_to_aten=False,

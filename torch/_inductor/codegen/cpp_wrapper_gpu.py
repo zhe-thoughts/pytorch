@@ -71,7 +71,7 @@ class DeferredGpuKernelLine(DeferredLineBase):
                 assert os.path.exists(params[key]), f"{params[key]} does not exist"
                 self.additional_files.append(params[key])
 
-        return self.line_template % tuple(params[key] for key in self.keys)
+        return self.line_template % tuple([params[key] for key in self.keys])
 
     def _new_line(self, line):
         return DeferredGpuKernelLine(
@@ -377,8 +377,8 @@ class CppWrapperGpu(CppWrapperCpu):
         # the data pointer of the source tensor ot the helper function
         # `init{1,2}DTMADescriptor`
         ptr = f"reinterpret_cast<void*>(*({source}))"
-        dims = ", ".join(self.val_to_arg_str(dim) for dim in desc.dims)
-        block_dims = ", ".join(self.val_to_arg_str(dim) for dim in desc.block_dims)
+        dims = ", ".join([self.val_to_arg_str(dim) for dim in desc.dims])
+        block_dims = ", ".join([self.val_to_arg_str(dim) for dim in desc.block_dims])
         element_size = self.val_to_arg_str(desc.element_size)
         fn = f"init{desc.rank}DTMADescriptor"
         args = f"&{desc_name}, {ptr}, {dims}, {block_dims}, {element_size}"

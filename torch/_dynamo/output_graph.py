@@ -1359,7 +1359,7 @@ class OutputGraph:
             output_node = self.create_node(
                 "output",
                 "output",
-                (self.current_tracer.create_arg(tuple(x.as_proxy() for x in rv)),),
+                (self.current_tracer.create_arg(tuple([x.as_proxy() for x in rv])),),
                 {},
             )
 

@@ -1084,7 +1084,7 @@ class NestedUserFunctionVariable(BaseUserFunctionVariable):
             self.f_globals,
             self.fn_name.as_python_constant(),
             tuple(self.defaults.items) if self.defaults else None,
-            tuple(make_cell(None) for _ in range(len(self.get_code().co_freevars))),
+            tuple([make_cell(None) for _ in range(len(self.get_code().co_freevars))]),
         )
         if self.kwdefaults:
             func.__kwdefaults__ = self.kwdefaults.keys_as_python_constant()
@@ -1635,7 +1635,7 @@ class PolyfilledFunctionVariable(VariableTracker):
                 tx.output.create_proxy(
                     "call_function",
                     torch.sym_sum,
-                    (tuple(a.as_proxy() for a in args[0].items),),
+                    (tuple([a.as_proxy() for a in args[0].items]),),
                     {},
                 ),
                 sym_num=torch.sym_sum(

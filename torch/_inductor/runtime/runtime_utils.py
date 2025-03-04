@@ -54,9 +54,11 @@ def get_num_bytes(*args: torch.Tensor, num_in_out_args: int = 0) -> int:
     The first num_in_out_args arguments are in out tensors.
     """
     return sum(
-        arg.numel() * arg.element_size() * (1 + int(i < num_in_out_args))
-        for i, arg in enumerate(args)
-        if isinstance(arg, torch.Tensor)
+        [
+            arg.numel() * arg.element_size() * (1 + int(i < num_in_out_args))
+            for i, arg in enumerate(args)
+            if isinstance(arg, torch.Tensor)
+        ]
     )
 
 

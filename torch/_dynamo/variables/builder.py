@@ -374,9 +374,11 @@ class BackwardStateGraphArg(GraphArg):
 # All class-based iterators in itertools
 # NOTE: use id() because some objects are not hashable, it will raise error during lookup
 ITERTOOLS_TYPE_IDS: frozenset[int] = frozenset(
-    id(member)
-    for name, member in vars(itertools).items()
-    if not name.startswith("_") and inspect.isclass(member)
+    [
+        id(member)
+        for name, member in vars(itertools).items()
+        if not name.startswith("_") and inspect.isclass(member)
+    ]
 )
 # Will be updated later in substitute_in_graph in torch/_dynamo/polyfills/itertools.py
 ITERTOOLS_POLYFILLED_TYPE_IDS: set[int] = set()
@@ -528,7 +530,7 @@ class VariableBuilder:
 
             return key, value
 
-        items = dict(build_key_value(k, v) for k, v in value.items())
+        items = dict([build_key_value(k, v) for k, v in value.items()])
 
         # Create a dict_vt to be used in the mapping proxy variable
         dict_vt = ConstDictVariable(items, source=None)
@@ -666,8 +668,10 @@ class VariableBuilder:
             # PyDict_Next to traverse the dictionary, which uses the internal
             # data structure and does not call the overridden keys method.
             result = dict(
-                build_key_value(i, k, v)
-                for i, (k, v) in enumerate(get_items_from_dict(value))
+                [
+                    build_key_value(i, k, v)
+                    for i, (k, v) in enumerate(get_items_from_dict(value))
+                ]
             )
 
             if istype(value, collections.defaultdict):
@@ -1277,8 +1281,10 @@ class VariableBuilder:
             # PyDict_Next to traverse the dictionary, which uses the internal
             # data structure and does not call the overridden keys method.
             result = dict(
-                build_key_value(i, k, v)
-                for i, (k, v) in enumerate(get_items_from_dict(value))
+                [
+                    build_key_value(i, k, v)
+                    for i, (k, v) in enumerate(get_items_from_dict(value))
+                ]
             )
 
             dict_vt = ConstDictVariable(

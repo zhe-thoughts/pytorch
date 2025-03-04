@@ -290,7 +290,7 @@ class LocalState:
 
     def render(self) -> str:
         return "\n".join(
-            f"{k}: {v.render()}" for k, v in self.automatic_dynamic.items()
+            [f"{k}: {v.render()}" for k, v in self.automatic_dynamic.items()]
         )
 
 
@@ -3334,14 +3334,18 @@ class InstructionTranslator(InstructionTranslatorBase):
         )
         # NOTE: do not use isinstance, since it realizes lazy VT's
         argnames = tuple(
-            k
-            for k in all_argnames
-            if not type.__instancecheck__(NullVariable, self.symbolic_locals[k])
+            [
+                k
+                for k in all_argnames
+                if not type.__instancecheck__(NullVariable, self.symbolic_locals[k])
+            ]
         )
         argnames_null = tuple(
-            k
-            for k in all_argnames
-            if type.__instancecheck__(NullVariable, self.symbolic_locals[k])
+            [
+                k
+                for k in all_argnames
+                if type.__instancecheck__(NullVariable, self.symbolic_locals[k])
+            ]
         )
         if sys.version_info < (3, 12):
             assert len(argnames_null) == 0, "variables should not be NULL in < 3.12"
@@ -3409,11 +3413,11 @@ class InstructionTranslator(InstructionTranslatorBase):
             self.f_code,
             self.lineno,
             inst.offset,
-            tuple(b.target.offset for b in self.block_stack),
+            tuple([b.target.offset for b in self.block_stack]),
             stack_len,
             argnames,
             argnames_null,
-            tuple(b.resume_fn() for b in self.block_stack),
+            tuple([b.resume_fn() for b in self.block_stack]),
             tuple(stack_ctx_vars),
             tuple(argnames_ctx_vars),
             tuple(null_idxes),

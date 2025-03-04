@@ -230,7 +230,7 @@ def do_bench_using_profiling(
     log.debug("profiling time breakdown")
     log.debug(actual_events.table(row_limit=-1))
 
-    res = sum(event.device_time_total for event in actual_events) / 1000.0 / n_repeat
+    res = sum([event.device_time_total for event in actual_events]) / 1000.0 / n_repeat
     log.debug("profiling results: %s ms", res)
     return res
 
@@ -268,7 +268,7 @@ def sympy_product(it: Iterable[sympy.Expr]) -> sympy.Expr:
 
 def sympy_dot(seq1: Sequence[sympy.Expr], seq2: Sequence[sympy.Expr]) -> sympy.Expr:
     assert len(seq1) == len(seq2)
-    return sympy.expand(sum(a * b for a, b in zip(seq1, seq2)))
+    return sympy.expand(sum([a * b for a, b in zip(seq1, seq2)]))
 
 
 def unique(it: Iterable[_T]) -> ValuesView[_T]:
@@ -609,7 +609,7 @@ def get_kernel_metadata(
     # is not supported. An example of this is conditional statements.
     single_graph = None
     if len(inductor_nodes):
-        unique_graphs = OrderedSet(n.graph for n in inductor_nodes)
+        unique_graphs = OrderedSet([n.graph for n in inductor_nodes])
         if len(unique_graphs) == 1:
             single_graph = inductor_nodes[0].graph
             # create a map of idx -> node and cache it
@@ -2356,7 +2356,8 @@ def clone_preserve_strides(x: torch.Tensor) -> torch.Tensor:
         needed_size = 0
     else:
         needed_size = (
-            sum((shape - 1) * stride for shape, stride in zip(x.size(), x.stride())) + 1
+            sum([(shape - 1) * stride for shape, stride in zip(x.size(), x.stride())])
+            + 1
         )
     buffer = torch.as_strided(x, (needed_size,), (1,)).clone()
     return torch.as_strided(buffer, x.size(), x.stride())
@@ -2430,7 +2431,7 @@ def set_tracing_context_output_strides(
                     return shape_env.evaluate_symexpr(e)
 
                 context.output_strides.append(
-                    tuple(map_expr(e) for e in exprs)  # type: ignore[misc]
+                    tuple([map_expr(e) for e in exprs])  # type: ignore[misc]
                 )
 
 

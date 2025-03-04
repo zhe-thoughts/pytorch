@@ -89,7 +89,7 @@ class BaseListVariable(VariableTracker):
         return self.as_python_constant()
 
     def debug_repr_helper(self, prefix, suffix):
-        return prefix + ", ".join(i.debug_repr() for i in self.items) + suffix
+        return prefix + ", ".join([i.debug_repr() for i in self.items]) + suffix
 
     def as_python_constant(self):
         return self.python_type()([x.as_python_constant() for x in self.items])
@@ -477,12 +477,14 @@ class ListVariable(CommonListMethodsVariable):
             tx.output.side_effects.mutation(self)
             sorted_items_with_keys = sorted(
                 (
-                    (
-                        x,
-                        k.as_python_constant(),
-                        -i if reverse else i,  # extra key to ensure stable sort
-                    )
-                    for i, (k, x) in enumerate(zip(keys, self.items))
+                    [
+                        (
+                            x,
+                            k.as_python_constant(),
+                            -i if reverse else i,  # extra key to ensure stable sort
+                        )
+                        for i, (k, x) in enumerate(zip(keys, self.items))
+                    ]
                 ),
                 key=operator.itemgetter(1, 2),
                 reverse=reverse,

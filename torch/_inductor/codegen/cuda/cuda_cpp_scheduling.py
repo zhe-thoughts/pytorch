@@ -32,7 +32,7 @@ class CUDACPPScheduling(BaseScheduling):
         return OrderedSet()
 
     def group_fn(self, sizes):
-        return tuple(V.graph.sizevars.simplify(sympy_product(s)) for s in sizes)
+        return tuple([V.graph.sizevars.simplify(sympy_product(s)) for s in sizes])
 
     @staticmethod
     def is_cuda_cpp_template(node: BaseSchedulerNode) -> bool:

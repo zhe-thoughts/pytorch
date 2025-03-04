@@ -885,7 +885,7 @@ class CppOverrides(OpOverrides):
     def frexp(x):
         cache_keys = f"frexp({x})[0]", f"frexp({x})[1]"
         if all(V.kernel.cse.try_get(cache_key) is not None for cache_key in cache_keys):
-            return tuple(V.kernel.cse.try_get(cache_key) for cache_key in cache_keys)
+            return tuple([V.kernel.cse.try_get(cache_key) for cache_key in cache_keys])
 
         code = BracesBuffer()
         exponent = V.kernel.cse.newvar(dtype=torch.int32)
@@ -1711,7 +1711,7 @@ class CppVecOverrides(CppOverrides):
     def frexp(x):
         cache_keys = f"frexp({x})[0]", f"frexp({x})[1]"
         if all(V.kernel.cse.try_get(cache_key) is not None for cache_key in cache_keys):
-            return tuple(V.kernel.cse.try_get(cache_key) for cache_key in cache_keys)
+            return tuple([V.kernel.cse.try_get(cache_key) for cache_key in cache_keys])
 
         cdtype = DTYPE_TO_CPP[x.dtype]
         size = V.kernel.tail_size if V.kernel.tail_size else V.kernel.tiling_factor
@@ -4390,7 +4390,7 @@ class CppScheduling(BaseScheduling):
         self._ready_to_flush = status
 
     def group_fn(self, sizes):
-        return tuple(tuple(map(V.graph.sizevars.simplify, s)) for s in sizes)
+        return tuple([tuple(map(V.graph.sizevars.simplify, s)) for s in sizes])
 
     def reset_kernel_group(self):
         from .cpp_wrapper_cpu import CppWrapperCpu

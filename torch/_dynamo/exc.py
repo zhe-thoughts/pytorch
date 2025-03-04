@@ -477,7 +477,7 @@ def format_graph_break_message(
 ) -> str:
     explanation = textwrap.indent(explanation, "    ").lstrip()
     hints_str = "\n".join(
-        "  Hint: " + textwrap.indent(hint, "    ").lstrip() for hint in hints
+        ["  Hint: " + textwrap.indent(hint, "    ").lstrip() for hint in hints]
     )
     context = textwrap.indent(context, "    ").lstrip()
 

@@ -115,14 +115,16 @@ def autotune_hints_to_configs(
                     (1, 1, block_size // 4),
                 )
             configs.extend(
-                triton_config(
-                    size_hints,
-                    *xyz,
-                    num_elements_per_warp=(
-                        device_props.warp_size if device_props.warp_size else 32
-                    ),
-                )
-                for xyz in xyz_options
+                [
+                    triton_config(
+                        size_hints,
+                        *xyz,
+                        num_elements_per_warp=(
+                            device_props.warp_size if device_props.warp_size else 32
+                        ),
+                    )
+                    for xyz in xyz_options
+                ]
             )
 
     return configs
@@ -932,7 +934,7 @@ class CachingAutotuner(KernelInterface):
                 grid_info = getattr(grid, "grid_fn_str", "")
 
             kernel_kwargs_str = ",".join(
-                f"{k}={v}" for (k, v) in launcher.config.kwargs.items()
+                [f"{k}={v}" for (k, v) in launcher.config.kwargs.items()]
             )
 
             profiler_kwargs = {
@@ -1247,8 +1249,8 @@ def start_graph():
 def end_graph(output_file):
     if len(collected_calls) == 0:
         return
-    overall_time = sum(call[0] for call in collected_calls)
-    overall_gb = sum(call[1] for call in collected_calls)
+    overall_time = sum([call[0] for call in collected_calls])
+    overall_gb = sum([call[1] for call in collected_calls])
     cur_file = inspect.stack()[1].filename
     summary_str = (
         f"SUMMARY ({cur_file})\n"

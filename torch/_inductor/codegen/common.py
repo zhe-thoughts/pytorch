@@ -1471,9 +1471,7 @@ class KernelArgs:
         if value in self.sizevars:
             return self.sizevars[value]
         if name in self.sizevars.values():
-            name = (
-                f"{name}{sum(1 for v in self.sizevars.values() if v.startswith(name))}"
-            )
+            name = f"{name}{sum([1 for v in self.sizevars.values() if v.startswith(name)])}"
         self.sizevars[value] = name
         return name
 

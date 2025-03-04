@@ -782,8 +782,12 @@ class FxGraphHashDetails:
                         if kernel.configs:
                             configs = str(
                                 sorted(
-                                    sorted(str(kv) for kv in c.all_kwargs().items())
-                                    for c in kernel.configs
+                                    [
+                                        sorted(
+                                            [str(kv) for kv in c.all_kwargs().items()]
+                                        )
+                                        for c in kernel.configs
+                                    ]
                                 )
                             )
                         kernel = kernel.fn
@@ -2108,8 +2112,10 @@ class CppPythonBindingsCodeCache(CppCodeCache):
             A python version of ENTRY_FUNCTION()
         """
         parseargs = ", ".join(
-            f"parse_arg<{argtype.replace('const ', '')}>(args, {n})"
-            for n, argtype in enumerate(argtypes)
+            [
+                f"parse_arg<{argtype.replace('const ', '')}>(args, {n})"
+                for n, argtype in enumerate(argtypes)
+            ]
         )
         suffix = cls.suffix_template % (
             cls.entry_function,
@@ -2346,9 +2352,11 @@ class HalideCodeCache(CppPythonBindingsCodeCache):
             ),
             headerfile=headerfile,
             argdefs=", ".join(
-                f"{a.bindings_type()} {a.name}"
-                for a in meta.argtypes
-                if a.alias_of is None
+                [
+                    f"{a.bindings_type()} {a.name}"
+                    for a in meta.argtypes
+                    if a.alias_of is None
+                ]
             ),
             buffers=buffers,
             buffer_names=", ".join(buffer_names),

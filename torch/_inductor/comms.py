@@ -150,7 +150,7 @@ def _schedule_for_comm(
             return self.score < other.score
 
     unmet_deps: dict[BaseSchedulerNode, OrderedSet[str]] = {
-        snode: OrderedSet(dep.name for dep in snode.unmet_dependencies)
+        snode: OrderedSet([dep.name for dep in snode.unmet_dependencies])
         for snode in snodes
     }
 
@@ -501,8 +501,10 @@ Graph: {graph}
                     and node.target != torch.ops.inductor.resize_storage_bytes_.default
                 ):  # TODO(yf225): implement replacement in kwargs
                     new_args = tuple(
-                        replacement if arg is unsharded_param else arg
-                        for arg in node.args
+                        [
+                            replacement if arg is unsharded_param else arg
+                            for arg in node.args
+                        ]
                     )
                     node.args = new_args
 

@@ -2012,12 +2012,16 @@ class GuardBuilder(GuardBuilderBase):
                     ]
 
                     int_symbols_str = ", ".join(
-                        f"{symbol} = int_values[{i}]"
-                        for i, (_, symbol) in enumerate(int_source_to_symbol)
+                        [
+                            f"{symbol} = int_values[{i}]"
+                            for i, (_, symbol) in enumerate(int_source_to_symbol)
+                        ]
                     )
                     float_symbols_str = ", ".join(
-                        f"{symbol} = float_values[{i}]"
-                        for i, (_, symbol) in enumerate(float_source_to_symbol)
+                        [
+                            f"{symbol} = float_values[{i}]"
+                            for i, (_, symbol) in enumerate(float_source_to_symbol)
+                        ]
                     )
 
                     if int_symbols_str:
@@ -2668,8 +2672,8 @@ class CheckFunctionManager:
                 ]
                 code_part = (
                     """check_overlapping("""
-                    f"""overlapping=[{", ".join(s.name() for s in guard.overlapping_sources)}], """
-                    f"""non_overlapping=[{", ".join(s.name() for s in guard.non_overlapping_sources)}])"""
+                    f"""overlapping=[{", ".join([s.name() for s in guard.overlapping_sources])}], """
+                    f"""non_overlapping=[{", ".join([s.name() for s in guard.non_overlapping_sources])}])"""
                 )
                 install_storage_overlapping_guard(
                     overlapping_guard_managers,
@@ -2965,8 +2969,10 @@ def get_and_maybe_log_recompilation_reasons(
     if do_recompiles_log or config.error_on_recompile:
         if is_recompiles_verbose_enabled():
             failures = "\n\n".join(
-                f"guard {i} failures:\n" + textwrap.indent(reason, "- ")
-                for i, reason in enumerate(reasons)
+                [
+                    f"guard {i} failures:\n" + textwrap.indent(reason, "- ")
+                    for i, reason in enumerate(reasons)
+                ]
             )
         else:
             failures = textwrap.indent("\n".join(reasons), "- ")
