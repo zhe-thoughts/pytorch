@@ -256,7 +256,7 @@ def parse_profile_event_list(
             "unknown",
         ]
         assert OrderedSet(all_events.keys()).issubset(OrderedSet(category_list)), (
-            f"{list(all_events.keys())}"
+            f"{[*all_events.keys()]}"
         )
 
         per_category_wall_time = {}

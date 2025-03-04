@@ -1262,7 +1262,7 @@ def _is_valid_dequant_promotion_pattern(dtype=torch.float32):
                 quantized_decomposed.dequantize_per_tensor.default,
                 quantized_decomposed.dequantize_per_tensor.tensor,
             ]
-            and len(list(dequant_pattern_end_node.users)) > 1
+            and len([*dequant_pattern_end_node.users]) > 1
         ):
             # If dequant pattern has more than 1 users, then do dequant promoted
             return True
@@ -1359,7 +1359,7 @@ def _register_dequant_promotion_pass(pattern, pass_number, dtype=torch.float32):
 
         # Clone the dequant pattern for each user node
         graph = match.graph
-        user_node_list = list(dequant_pattern_end_node.users)
+        user_node_list = [*dequant_pattern_end_node.users]
         for user_node in user_node_list[1:]:
             _source_node = dequant_pattern_end_node
             _user_node = user_node
@@ -1401,7 +1401,7 @@ def _is_valid_dequant_conv2d_pattern(dtype):
             convert_to_bf16 = conv_node.args[0]
             dequant_node = convert_to_bf16.args[0]
 
-        if len(list(dequant_node.users)) != 1:
+        if len([*dequant_node.users]) != 1:
             # Ensure the dequant pattern only has 1 user
             # since we will delete the dequant pattern here
             return False
@@ -1681,7 +1681,7 @@ def _is_valid_dequant_linear_pattern(dtype, input_dim_exceeds_two, input_contigu
             quantized_decomposed.dequantize_per_tensor.tensor,
         ]
 
-        if len(list(dequant_node.users)) != 1:
+        if len([*dequant_node.users]) != 1:
             # Ensure the dequant pattern only has 1 user
             # since we will delete the dequant pattern here
             return False

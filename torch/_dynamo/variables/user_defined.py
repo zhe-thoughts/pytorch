@@ -553,7 +553,7 @@ class UserDefinedClassVariable(UserDefinedVariable):
             else:
                 field_defaults = self.value._field_defaults
 
-                items = list(args)
+                items = [*args]
                 items.extend([None] * (len(fields) - len(items)))
 
                 var_tracker_kwargs = {}
@@ -577,7 +577,7 @@ class UserDefinedClassVariable(UserDefinedVariable):
             return variables.NamedTupleVariable(items, self.value)
         elif is_frozen_dataclass(self.value) and self.is_standard_new():
             fields = dataclasses.fields(self.value)
-            items = list(args)
+            items = [*args]
             items.extend([None] * (len(fields) - len(items)))
 
             default_kwargs = {}

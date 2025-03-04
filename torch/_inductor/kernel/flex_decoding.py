@@ -529,7 +529,7 @@ def create_flex_decoding_kernel(*args, **kwargs):
 
         cur_kernel_options = original_kernel_options.copy()
         # Remove prefix for forward kernels options and delete backward kernel options.
-        for k in list(cur_kernel_options.keys()):
+        for k in [*cur_kernel_options.keys()]:
             if k.startswith("fwd_"):
                 v = cur_kernel_options.pop(k)
                 cur_kernel_options[k[4:]] = v
@@ -576,8 +576,8 @@ def create_flex_decoding_kernel(*args, **kwargs):
             full_kv_num_blocks,
             full_kv_indices,
         ]
-        + list(score_mod_other_buffers)
-        + list(mask_mod_other_buffers)
+        + [*score_mod_other_buffers]
+        + [*mask_mod_other_buffers]
     )
 
     input_gen_fns = {

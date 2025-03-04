@@ -345,7 +345,7 @@ def list_options() -> list[str]:
 
     current_config: dict[str, Any] = config.get_config_copy()
 
-    return list(current_config.keys())
+    return [*current_config.keys()]
 
 
 def cudagraph_mark_step_begin():

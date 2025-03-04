@@ -1263,7 +1263,7 @@ Either create the tensor outside the compiled region, or do not set the tensor t
         def handle_ntuple(value):
             if value.has_unpack_var_sequence(tx):
                 return variables.TupleVariable(
-                    list(value.unpack_var_sequence(tx)),
+                    [*value.unpack_var_sequence(tx)],
                 )
             elif value.is_python_constant():
                 # constant prop through it

@@ -332,7 +332,7 @@ def has_tensor_in_frame(frame: DynamoFrameType) -> bool:
             # Some packages like pytest can be updated during runtime. So, make a
             # copy of values to avoid issues like "RuntimeError: dictionary
             # changed size during iteration"
-            values = list(obj.values())
+            values = [*obj.values()]
             seen_ids[obj_id] = any(has_tensor(v) for v in values)
             return seen_ids[obj_id]
         elif istype(obj, (str, int, float, type(None), bool)):
@@ -1025,14 +1025,14 @@ def _compile(
         torch._logging.trace_structured(
             "dynamo_start",
             lambda: {
-                "stack": list(
-                    itertools.takewhile(
+                "stack": [
+                    *itertools.takewhile(
                         lambda f: f["filename"] != convert_frame_intern,
                         structured.from_traceback(
                             CapturedTraceback.extract(skip=4 + skip).summary()
                         ),
                     )
-                )
+                ]
                 + [
                     {
                         "line": code.co_firstlineno,

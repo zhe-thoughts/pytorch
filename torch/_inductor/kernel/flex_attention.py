@@ -150,7 +150,7 @@ def zeros_and_scatter_lowering(shape: list[int], indices, values):
     indices_loaders = [i.make_loader() if i is not None else None for i in indices]
     indices, tensor_indices = check_and_broadcast_indices(indices, grad.get_device())
     # We can use the first one since they are all required to be the same size
-    tensor_size = list(indices[tensor_indices[0]].get_size())
+    tensor_size = [*indices[tensor_indices[0]].get_size()]
     indexed_size = [x_size[i] for i in range(len(indices))]
 
     expected_vals_size, inner_fn = index_output_size_and_inner_fn(
@@ -970,7 +970,7 @@ def lower_cpu(
         ]
     ]
     subgraph_buffer = build_subgraph_buffer(
-        placeholder_inps + list(score_mod_other_buffers), subgraph
+        placeholder_inps + [*score_mod_other_buffers], subgraph
     )
     if subgraph_buffer is not None:
         if isinstance(subgraph_buffer, list):
@@ -1047,7 +1047,7 @@ def lower_cpu(
     converted_mask_graph_module = convert_mask_graph_module(mask_graph)
 
     mask_graph_buffer = build_subgraph_module_buffer(
-        mask_graph_placeholder_inps + list(mask_mod_other_buffers),
+        mask_graph_placeholder_inps + [*mask_mod_other_buffers],
         converted_mask_graph_module,
     )
 
@@ -1059,9 +1059,9 @@ def lower_cpu(
 
     buffer_list = (
         placeholder_inps
-        + list(score_mod_other_buffers)
+        + [*score_mod_other_buffers]
         + mask_graph_placeholder_inps
-        + list(mask_mod_other_buffers)
+        + [*mask_mod_other_buffers]
     )
     for item in buffer_list:
         if isinstance(item, TensorBox):
@@ -1296,7 +1296,7 @@ def flex_attention(
         ]
     ]
     subgraph_buffer = build_subgraph_buffer(
-        placeholder_inps + list(score_mod_other_buffers), subgraph
+        placeholder_inps + [*score_mod_other_buffers], subgraph
     )
 
     mask_graph_placeholder_inps = [
@@ -1309,7 +1309,7 @@ def flex_attention(
         ]
     ]
     mask_graph_buffer = build_subgraph_buffer(
-        mask_graph_placeholder_inps + list(mask_mod_other_buffers), mask_graph
+        mask_graph_placeholder_inps + [*mask_mod_other_buffers], mask_graph
     )
 
     kernel_options = dict(kernel_options)
@@ -1462,7 +1462,7 @@ def flex_attention(
         # Performance tuning
         # Triton parameters
         # Remove prefix for forward kernels options and delete backward kernel options.
-        for k in list(cur_kernel_options.keys()):
+        for k in [*cur_kernel_options.keys()]:
             if k.startswith("fwd_"):
                 v = cur_kernel_options.pop(k)
                 cur_kernel_options[k[4:]] = v
@@ -1512,8 +1512,8 @@ def flex_attention(
             full_kv_num_blocks,
             full_kv_indices,
         ]
-        + list(score_mod_other_buffers)
-        + list(mask_mod_other_buffers)
+        + [*score_mod_other_buffers]
+        + [*mask_mod_other_buffers]
     )
     input_gen_fns = {
         4: create_num_blocks_fake_generator(kv_indices),
@@ -2425,7 +2425,7 @@ def flex_attention_backward(*args, **kwargs):
         ]
     ]
     fw_subgraph_buffer = build_subgraph_buffer(
-        fwd_placeholder_inps + list(score_mod_other_buffers), fw_graph
+        fwd_placeholder_inps + [*score_mod_other_buffers], fw_graph
     )
 
     joint_placeholder_inps = fwd_placeholder_inps + [
@@ -2439,7 +2439,7 @@ def flex_attention_backward(*args, **kwargs):
     validate_joint_graph(joint_graph.graph_module.graph)
 
     all_joint_outputs = build_subgraph_buffer(
-        joint_placeholder_inps + list(score_mod_other_buffers),
+        joint_placeholder_inps + [*score_mod_other_buffers],
         joint_graph,
     )
 
@@ -2457,7 +2457,7 @@ def flex_attention_backward(*args, **kwargs):
         ]
     ]
     mask_graph_buffer = build_subgraph_buffer(
-        mask_graph_placeholder_inps + list(mask_mod_other_buffers), mask_graph
+        mask_graph_placeholder_inps + [*mask_mod_other_buffers], mask_graph
     )
 
     mask_graph_buffer = mask_graph_buffer
@@ -2545,7 +2545,7 @@ def flex_attention_backward(*args, **kwargs):
         # Triton heuristics
         cur_kernel_options = original_kernel_options.copy()
         # Remove prefix for backward kernels options and delete forward kernel options.
-        for k in list(cur_kernel_options.keys()):
+        for k in [*cur_kernel_options.keys()]:
             if k.startswith("bwd_"):
                 v = cur_kernel_options.pop(k)
                 cur_kernel_options[k[4:]] = v
@@ -2616,8 +2616,8 @@ def flex_attention_backward(*args, **kwargs):
             full_q_num_blocks,
             full_q_indices,
         ]
-        + list(score_mod_other_buffers)
-        + list(mask_mod_other_buffers)
+        + [*score_mod_other_buffers]
+        + [*mask_mod_other_buffers]
         + joint_outputs.mutated_grads
     )
     input_gen_fns = {
