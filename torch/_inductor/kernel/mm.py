@@ -17,7 +17,6 @@ from torch._inductor.virtualized import V
 from .. import config as inductor_config, ir
 from ..codegen.cuda.gemm_template import CUTLASS2xGemmTemplate, CUTLASS3xGemmTemplate
 from ..codegen.rocm.ck_universal_gemm_template import CKGemmTemplate
-from ..codegen.wrapper import PythonWrapperCodegen
 from ..ir import FlexibleLayout, is_triton
 from ..lowering import register_lowering
 from ..select_algorithm import (
@@ -538,7 +537,7 @@ def tuned_int_mm(mat1, mat2, *, layout=None):
 def tuned_addmm(inp, mat1, mat2, *, alpha=1, beta=1, layout=None):
     ordered_kwargs_for_cpp_kernel = ("beta", "alpha")
     m, n, k, layout, mat1, mat2, inp_expanded = mm_args(mat1, mat2, inp, layout=layout)
-    static_shape, is_nonzero = _is_static_problem(layout)
+    _, is_nonzero = _is_static_problem(layout)
 
     log.info(
         "Tuned aten.addmm: m=%s, n=%s, k=%s, mat1_dtype=%s, mat2_dtype=%s, output_layout=%s",
@@ -629,16 +628,11 @@ def tuned_addmm(inp, mat1, mat2, *, alpha=1, beta=1, layout=None):
                     epilogue_fn=addmm_epilogue(layout.dtype, alpha, beta),
                 )
 
-    if static_shape and is_nonzero and use_cutlass_template(layout, m, n, k):
+    if is_nonzero and use_cutlass_template(layout, m, n, k):
         # Filter out a known cause of CUDA illegal memory access errors
         # broadcasting on the last dim of the bias term seems not to be working
         # in the linear GEMM epilogue used by addmm.
-        if (
-            PythonWrapperCodegen.statically_known_int_or_none(
-                inp_expanded.layout.stride[-1]
-            )
-            != 0
-        ):
+        if len(inp_expanded.layout.size) != 1:
             CUTLASS3xGemmTemplate.add_cutlass_gemm_choices(
                 choices,
                 layout,
