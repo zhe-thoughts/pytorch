@@ -1753,18 +1753,22 @@ class Module:
     # torchrec tests the code consistency with the following code
     # fmt: off
     def _call_impl(self, *args, **kwargs):
-        forward_call = (self._slow_forward if torch._C._get_tracing_state() else self.forward)
+        _call_impl_forward_call = (self._slow_forward if torch._C._get_tracing_state() else self.forward)
         # If we don't have any hooks, we want to skip the rest of the logic in
         # this function, and just call forward.
         if not (self._backward_hooks or self._backward_pre_hooks or self._forward_hooks or self._forward_pre_hooks
                 or _global_backward_pre_hooks or _global_backward_hooks
                 or _global_forward_hooks or _global_forward_pre_hooks):
-            return forward_call(*args, **kwargs)
+            return _call_impl_forward_call(*args, **kwargs)
 
         result = None
         called_always_called_hooks = set()
 
-        def inner():
+        # NOTE: frames in torch/ are skipped by default, which causes the module's
+        # forward pre-hook, forward, and forward post-hook to always be in separate graphs.
+        # To work around this issue, we explicitly add "don't skip _nn_module_call_impl_inner" to trace_rules.py,
+        # so that all the forward hooks can be in the same graph as forward.
+        def _nn_module_call_impl_inner():
             nonlocal result, args, kwargs
 
             full_backward_hooks, non_full_backward_hooks = [], []
@@ -1802,7 +1806,9 @@ class Module:
                 bw_hook = BackwardHook(self, full_backward_hooks, backward_pre_hooks)
                 args = bw_hook.setup_input_hook(args)
 
-            result = forward_call(*args, **kwargs)
+            # TODO(yf225): this rename is a hack to more easily avoid issuing ID_MATCH for the forward call.
+            # Proper fix is to figure out why ID of forward_call is changed per iteration.
+            result = _call_impl_forward_call(*args, **kwargs)
             if _global_forward_hooks or self._forward_hooks:
                 for hook_id, hook in (
                     *_global_forward_hooks.items(),
@@ -1851,10 +1857,10 @@ class Module:
         # reason.  Don't try to run the always called hooks in event of
         # exception.
         if torch.compiler.is_compiling():
-            return inner()
+            return _nn_module_call_impl_inner()
 
         try:
-            return inner()
+            return _nn_module_call_impl_inner()
         except Exception:
             # run always called hooks if they have not already been run
             # For now only forward hooks have the always_call option but perhaps
