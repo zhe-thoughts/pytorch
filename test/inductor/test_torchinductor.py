@@ -7533,9 +7533,10 @@ class CommonTemplate:
             ),
         )
 
-    @skip_if_triton_cpu
     @requires_gpu()
     def test_indirect_broadcast_embedding(self):
+        if self.device == 'cpu':
+            raise unittest.SkipTest("Skipping test on CPU")
         B, T, D, V = (8, 2048, 4096, 2048)
         op = nn.Embedding(V, D).to(self.device).to(torch.float32)
         _input = torch.randint(0, V, (B, T), device=self.device)
