@@ -470,7 +470,7 @@ class TestFP8MatmulCuda(TestCase):
         self._test_tautological_mm(device, e4m3_type, e4m3_type, size=16)
         if IS_GFX12:
             self.skipTest("Gfx12 enablement in progress")
-        
+
         ctx = self.assertRaises(RuntimeError) if torch.version.hip is None else contextlib.nullcontext()
         with ctx:
             self._test_tautological_mm(device, e5m2_type, e5m2_type)
