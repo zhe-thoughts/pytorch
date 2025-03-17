@@ -332,12 +332,12 @@ PyObject* launch_kernel(PyObject* self, PyObject* args) {
 std::array<PyMethodDef, 2> StaticCudaLauncherMethods = {
     PyMethodDef{
         "_launch_kernel",
-        (PyCFunction)launch_kernel,
+        launch_kernel,
         METH_VARARGS,
         "Cuda Launcher with up to 50 args"},
     PyMethodDef{
         "_load_kernel",
-        (PyCFunction)load_kernel,
+        load_kernel,
         METH_VARARGS,
         "Load CUDA kernel from cubin file"}};
 
