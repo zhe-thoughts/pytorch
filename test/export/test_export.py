@@ -17,6 +17,7 @@ import torch
 import torch._dynamo as torchdynamo
 import torch.nn.functional as F
 from functorch.experimental.control_flow import cond, map
+import numpy as np
 from torch import Tensor
 from torch._decomp import decomposition_table
 from torch._dynamo.test_case import TestCase
@@ -1266,6 +1267,29 @@ graph():
             torch.randn(10, requires_grad=True),
         )
         torch.export.export(M(), args)
+
+    def test_numpy(self):
+        class Foo(torch.nn.Module):
+            def forward(self, x):
+                a = x.numpy()
+                return x + np.sin(x.numpy().sum())
+
+        foo = Foo()
+        foo(torch.randn(10, 10))
+
+        non_strict_graph = (
+            export(foo, (torch.randn(10, 10),), strict=False)
+            .run_decompositions({})
+            .graph
+        )
+        # strict_graph = (
+        #     export(foo, (torch.randn(10, 10),), strict=True)
+        #     .run_decompositions({})
+        #     .graph
+        # )
+        # g = torch.export._trace._export_to_torch_ir(foo, (torch.randn(10, 10),))
+        # print("GRAPH", g.graph)
+        # self.assertEqual(str(non_strict_graph), str(strict_graph))
 
     def test_cond_int_closure(self):
         class M(torch.nn.Module):
