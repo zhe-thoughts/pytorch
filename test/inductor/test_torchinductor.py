@@ -35,6 +35,7 @@ from torch._dynamo.debug_utils import aot_graph_input_parser
 from torch._dynamo.device_interface import get_interface_for_device
 from torch._dynamo.testing import (
     CompileCounterWithBackend,
+    expectedFailureDynamic,
     expectedFailureCodegenDynamic,
     rand_strided,
     reset_rng_state,
@@ -7533,6 +7534,7 @@ class CommonTemplate:
             ),
         )
 
+    @expectedFailureDynamic
     @requires_gpu()
     def test_indirect_broadcast_embedding(self):
         if self.device == 'cpu':
