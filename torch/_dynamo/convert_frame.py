@@ -72,7 +72,7 @@ from torch.utils._python_dispatch import (
 )
 from torch.utils._traceback import CapturedTraceback, format_traceback_short
 
-from . import config, decorators, exc, graph_break_hints, trace_rules
+from . import config, decorators, exc, external_utils, graph_break_hints, trace_rules
 from .bytecode_analysis import remove_dead_code, remove_pointless_jumps
 from .bytecode_transformation import (
     check_inst_exn_tab_entries_valid,
@@ -1229,6 +1229,7 @@ class ConvertFrame:
         frame_state: dict[str, Union[int, FrameStateSizeEntry]],
         skip: int = 0,
     ) -> ConvertFrameReturn:
+        input_codes.add(frame.f_code)
         counters["frames"]["total"] += 1
         try:
             result = self._inner_convert(
@@ -1388,7 +1389,22 @@ class CatchErrorsWrapper:
     ) -> ConvertFrameReturn:
         assert frame_state is not None
 
-        is_skipfile = trace_rules.check(frame.f_code)
+        input_codes.add(frame.f_code)
+
+        # If this frame is skipped by trace_rules, but dont_skip_tracing is active,
+        # then do not actually skip the frame.
+        dont_skip_tracing = False
+        frames = [frame] + exc.get_real_frames()
+        for f in frames:
+            if f.f_code is external_utils._dont_skip_tracing_wrapper_code:
+                dont_skip_tracing = True
+                break
+        # necessary to prevent refleaks since `frames` holds a reference to this current frame
+        del frames
+
+        is_skipfile = trace_rules.check(
+            frame.f_code, dont_skip_tracing=dont_skip_tracing
+        )
         if sys.version_info >= (3, 13):
             has_started_execution = frame.f_lasti > first_real_inst_idx(frame.f_code)
         else:

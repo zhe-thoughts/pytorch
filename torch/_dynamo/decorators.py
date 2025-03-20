@@ -30,7 +30,11 @@ from .eval_frame import (
     skip_code,
 )
 from .exc import IncorrectUsage
-from .external_utils import get_nonrecursive_disable_wrapper, is_compiling
+from .external_utils import (
+    dont_skip_tracing_decorator_wrapper,
+    get_nonrecursive_disable_wrapper,
+    is_compiling,
+)
 from .utils import is_function
 
 
@@ -729,3 +733,33 @@ def _allow_in_graph_einops():
 
 
 trace_rules.add_module_init_func("einops", _allow_in_graph_einops)
+
+
+# Implementation details
+# We add a `dont_skip_tracing` option to trace_rules - if set, then functions/modules
+# with SkipFunctionVariable rules will instead have a UserFunctionVariable rule - i.e. inline the function.
+# We still skip on certain functions - notably most of torch/_dynamo, because tracing into things like eval_frame
+# will cause problems.
+# We detect if `dont_skip_tracing` is active by inspecting the current frame and previous frames, looking
+# for a frame that has dont_skip_tracing_wrapper as its code object. If we find such a frame, then we should
+# perform trace_rules lookups with `dont_skip_tracing` set.
+def dont_skip_tracing(fn=None, recursive=True):
+    """
+    There are some functions/modules that are intentionally marked by developers to not be
+    traced, likely because these functions may cause issues when tracing.
+    When encountering these functions, Dynamo will graph break and skip tracing into them,
+    giving a message in the form "Attempted to call function marked as skipped".
+    If you would like to bypass this graph break and attempt to trace into this function anyway,
+    you can apply this decorator to the skipped function.
+    Note that there are still some functions/modules that we will still be unable to trace into,
+    even with the decorator applied (e.g. many modules under torch/_dynamo).
+    This decorator has lower precedence than disallow_in_graph.
+    If recursive=True, this decorator will also apply to recursively invoked functions.
+    (NOTE: recursive=False is not yet implemented).
+    """
+
+    wrapper = dont_skip_tracing_decorator_wrapper(recursive)
+
+    if fn is None:
+        return wrapper
+    return wrapper(fn)
