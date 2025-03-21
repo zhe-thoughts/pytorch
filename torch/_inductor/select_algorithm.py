@@ -16,7 +16,8 @@ import textwrap
 import time
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from io import StringIO
-from typing import Any, Callable, Optional, TYPE_CHECKING, Union
+from types import ModuleType
+from typing import Any, Callable, NamedTuple, Optional, TYPE_CHECKING, Union
 from typing_extensions import Self
 from unittest.mock import patch
 
@@ -1050,6 +1051,137 @@ def _jinja2_env():
         return None
 
 
+class GeneratedModulesCacheEntry(NamedTuple):
+    mod: ModuleType
+    extra: str
+    normalized_kernel_args_input_buffers_keys: list[int]
+    normalized_prologue_supported_inputs: list[int]
+    args_sizevars_keys: tuple[sympy.Expr, ...]
+    code: str
+
+
+class GeneratedModulesCache(dict[str, GeneratedModulesCacheEntry]):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def cache_clear(self) -> None:
+        super().clear()
+
+    # We omit input nodes names from the cache, to make the cache insensitive to the input nodes names.
+    # note that the generated code is indepenent on input names, except for some meta data, namely;
+    # kernel.prologue_supported_inputs and kernel.args.input_buffers.
+
+    # To address that, we do normalization using input_name_to_index and index_to_input_name:
+    # Each input name is mapped to its index in the inputs list, for example for inputs
+    # (x, y, x) we generate {x->0, y->1, x->2}. We also generate the inverse mapping {2->x, 1->y}.
+
+    # After running the codegen, for the outputs kernel.args.input_buffers.keys() and
+    # if we do cache the result we cache the indices of the inputs instrea.
+    # for example if kernel.args.input_buffers.keys() was (x, y, x) we would cache (2, 1, 2).
+    # see get_entry and put_entry for details.
+
+    # if this is called again and we get a cache hit with another inputs (m, h, m) then we can
+    # use that indexing to regenerate the kernel.args.input_buffers.keys() it would be (m, h, m).
+
+    # TODO Normalize symbols in input_nodes so that inputs
+    # [s0, s2] * [s2, s3] and [s4, s5] * [s6, s7] would cache hit.
+    def make_key(
+        self,
+        input_nodes,
+        num_stages,
+        num_warps,
+        call_sizes,
+        prefix_args,
+        suffix_args,
+        epilogue_fn,
+        subgraphs,
+        workspace_arg,
+        layout,
+        kwargs,
+    ) -> Optional[str]:
+        def input_key(input):
+            return (
+                input.get_size(),
+                input.get_stride(),
+                input.get_dtype(),
+                input.get_device().type,
+            )
+
+        if (
+            epilogue_fn == identity
+            and subgraphs is None
+            and call_sizes == layout.size
+            and workspace_arg is None
+        ):
+            cache_key = repr(
+                {
+                    "input_nodes": [input_key(name) for name in input_nodes],
+                    "num_stages": num_stages,
+                    "num_warps": num_warps,
+                    "prefix_args": prefix_args,
+                    "suffix_args": suffix_args,
+                    "layout": layout,
+                    "kwargs": kwargs,
+                }
+            )
+            return cache_key
+        return None
+
+    def get_entry(self, cache_key, input_nodes):
+        if cache_key is None:
+            return
+
+        entry = super().get(cache_key, None)
+        if entry is None:
+            return None
+
+        index_to_input_name: dict[int, str] = {
+            index: value.get_name() for index, value in enumerate(input_nodes)
+        }
+
+        return (
+            entry.mod,
+            entry.extra,
+            tuple(
+                index_to_input_name[i]
+                for i in entry.normalized_kernel_args_input_buffers_keys
+            ),
+            OrderedSet(
+                [
+                    index_to_input_name[i]
+                    for i in entry.normalized_prologue_supported_inputs
+                ]
+            ),
+            entry.args_sizevars_keys,
+            entry.code,
+        )
+
+    def put_entry(self, cache_key, input_nodes, mod, extra, code, kernel) -> None:
+        if cache_key is None:
+            return
+        input_name_to_index: dict[str, int] = {
+            value.get_name(): index for index, value in enumerate(input_nodes)
+        }
+
+        normalized_kernel_args_input_buffers_keys = [
+            input_name_to_index[n] for n in kernel.args.input_buffers.keys()
+        ]
+        normalized_prologue_supported_inputs = [
+            input_name_to_index[n] for n in kernel.prologue_supported_inputs
+        ]
+
+        entry = GeneratedModulesCacheEntry(
+            mod,
+            extra,
+            normalized_kernel_args_input_buffers_keys,
+            normalized_prologue_supported_inputs,
+            tuple(kernel.args.sizevars.keys()),
+            code,
+        )
+
+        super().update({cache_key: entry})
+
+
 class TritonTemplate(KernelTemplate):
     index_counter = itertools.count()
     all_templates: dict[str, "TritonTemplate"] = {}
@@ -1059,49 +1191,48 @@ class TritonTemplate(KernelTemplate):
         self.grid = grid
         self.template = self._template_from_string(source)
         assert name not in self.all_templates, "duplicate template name"
-        self.all_templates[name] = self
+        TritonTemplate.all_templates[name] = self
         self.debug = debug
+        self._generated_module_cache: GeneratedModulesCache = GeneratedModulesCache()
+        clear_on_fresh_inductor_cache(self._generated_module_cache)
 
-    def generate(  # type: ignore[override]
+    # Those class fields are used for testing _generated_module_cache.
+    # When this flag is on, we ensure that the cached results and the generated result if cache
+    # was not used are the same.
+    test_cache = False
+    generated_module_cache_hit = 0
+
+    def generate_and_load(
         self,
         input_nodes,
-        layout,
         num_stages,
         num_warps,
-        prefix_args=0,
-        suffix_args=0,
-        epilogue_fn=identity,
-        subgraphs=None,
-        mutated_inputs=None,
-        call_sizes=None,
-        workspace_arg: Optional[WorkspaceArg] = None,
-        **kwargs,
+        call_sizes,
+        prefix_args,
+        suffix_args,
+        epilogue_fn,
+        subgraphs,
+        workspace_arg,
+        layout,
+        kwargs,
     ):
-        """This function generates a TritonTemplateCaller
+        """Generate the python code and load it into the current process"""
+        cache_key = self._generated_module_cache.make_key(
+            input_nodes,
+            num_stages,
+            num_warps,
+            call_sizes,
+            prefix_args,
+            suffix_args,
+            epilogue_fn,
+            subgraphs,
+            workspace_arg,
+            layout,
+            kwargs,
+        )
 
-        Args:
-            input_nodes: List of input nodes
-            layout: Output layout
-            num_stages: Number of stages for triton launch
-            num_warps: Number of warps for triton launch
-            prefix_args: Number of input nodes to be passed as arguments
-            suffix_args: Number of input nodes to be passed as arguments
-            epilogue_fn: Optional epilogue function to be called on the output
-            subgraphs: Optional subgraphs to be passed as arguments, these will be inlined
-                into the triton template string
-            mutated_inputs: Optional list of input nodes that are mutated by the kernel, this is helpful
-                if you need to return multiple outputs. You can pass them as inputs and mark them as
-                being mutated by the kernel.
-        """
         assert self.template, "requires jinja2"
         defines = StringIO()
-
-        # HACK: Triton currently breaks if TF32 floats are requested, but the CUDA
-        # capability doesn't support them.  This is a bug in Triton, but for now we'll
-        # patch around it here.  See https://github.com/triton-lang/triton/issues/3011
-        # for one example issue with this problem.
-        if not torch.cuda.is_tf32_supported():
-            kwargs["ALLOW_TF32"] = "False"
 
         for name, val in kwargs.items():
             defines.write(f"{name} : tl.constexpr = {val}\n")
@@ -1117,9 +1248,6 @@ class TritonTemplate(KernelTemplate):
                 "64-bit indexing is not yet implemented for triton templates"
             )
 
-        if call_sizes is None:
-            call_sizes = layout.size
-
         kernel_options = {
             "input_nodes": input_nodes,
             "defines": defines,
@@ -1133,6 +1261,17 @@ class TritonTemplate(KernelTemplate):
             "epilogue_fn": epilogue_fn,
             "subgraphs": subgraphs,
         }
+
+        cache_result = self._generated_module_cache.get_entry(cache_key, input_nodes)
+
+        if cache_result is not None:
+            TritonTemplate.generated_module_cache_hit = (
+                TritonTemplate.generated_module_cache_hit + 1
+            )
+
+            if not TritonTemplate.test_cache:
+                # exclude code from the result
+                return cache_result[:-1] + (kernel_options,)
 
         with (
             patch.object(V.graph, "get_dtype", self._fake_get_dtype(fake_out)),
@@ -1169,10 +1308,90 @@ class TritonTemplate(KernelTemplate):
             )
             mod = PyCodeCache.load(code, extra)
 
-        input_call_args = tuple(kernel.args.input_buffers.keys())
+            self._generated_module_cache.put_entry(
+                cache_key, input_nodes, mod, extra, code, kernel
+            )
 
-        # We expect the input_buffer order to be [*input_nodes, *captured_buffers]
+            result = (
+                mod,
+                extra,
+                tuple(kernel.args.input_buffers.keys()),
+                kernel.prologue_supported_inputs.copy(),
+                tuple(kernel.args.sizevars.keys()),
+                code,
+            )
+
+            # Test the cached result and compare with actual result if TritonTemplate.test_cache is set.
+            if TritonTemplate.test_cache and cache_result:
+                # We do not compare the loaded module! but we compare the code.
+                assert result[1:] == cache_result[1:]
+
+            return result[:-1] + (kernel_options,)
+
+    def generate(  # type: ignore[override]
+        self,
+        input_nodes,
+        layout,
+        num_stages,
+        num_warps,
+        prefix_args=0,
+        suffix_args=0,
+        epilogue_fn=identity,
+        subgraphs=None,
+        mutated_inputs=None,
+        call_sizes=None,
+        workspace_arg: Optional[WorkspaceArg] = None,
+        **kwargs,
+    ):
+        """This function generates a TritonTemplateCaller
+
+        Args:
+            input_nodes: List of input nodes
+            layout: Output layout
+            num_stages: Number of stages for triton launch
+            num_warps: Number of warps for triton launch
+            prefix_args: Number of input nodes to be passed as arguments
+            suffix_args: Number of input nodes to be passed as arguments
+            epilogue_fn: Optional epilogue function to be called on the output
+            subgraphs: Optional subgraphs to be passed as arguments, these will be inlined
+                into the triton template string
+            mutated_inputs: Optional list of input nodes that are mutated by the kernel, this is helpful
+                if you need to return multiple outputs. You can pass them as inputs and mark them as
+                being mutated by the kernel.
+        """
+        # HACK: Triton currently breaks if TF32 floats are requested, but the CUDA
+        # capability doesn't support them.  This is a bug in Triton, but for now we'll
+        # patch around it here.  See https://github.com/triton-lang/triton/issues/3011
+        # for one example issue with this problem.
+        if not torch.cuda.is_tf32_supported():
+            kwargs["ALLOW_TF32"] = "False"
+
+        if call_sizes is None:
+            call_sizes = layout.size
+
+        (
+            mod,
+            extra,
+            input_call_args,
+            prologue_supported_inputs,
+            args_sizevars_keys,
+            kernel_options,
+        ) = self.generate_and_load(
+            input_nodes,
+            num_stages,
+            num_warps,
+            call_sizes,
+            prefix_args,
+            suffix_args,
+            epilogue_fn,
+            subgraphs,
+            workspace_arg,
+            layout,
+            kwargs,
+        )
+
         expected_input_args = tuple(unique(x.get_name() for x in input_nodes))
+        # We expect the input_buffer order to be [*input_nodes, *captured_buffers]
         assert input_call_args[: len(expected_input_args)] == expected_input_args, (
             input_call_args,
             expected_input_args,
@@ -1180,7 +1399,7 @@ class TritonTemplate(KernelTemplate):
 
         full_input_nodes = tuple([V.graph.get_buffer(k) for k in input_call_args])
         extra_args = V.graph.sizevars.size_hints(
-            map(sympy.expand, tuple(kernel.args.sizevars.keys())),
+            map(sympy.expand, tuple(args_sizevars_keys)),
             fallback=config.unbacked_symint_fallback,
         )
 
@@ -1218,7 +1437,7 @@ class TritonTemplate(KernelTemplate):
         bmreq = bmreq_cls(
             module_path=mod.__file__,
             module_cache_key=mod.key,
-            kernel_name=kernel_name,
+            kernel_name=f"triton_{self.name}",
             extra_args=[*extra_args, *grid],
             num_stages=num_stages,
             num_warps=num_warps,
@@ -1229,7 +1448,6 @@ class TritonTemplate(KernelTemplate):
             output_tensor_meta=TensorMeta.from_irnodes(layout),
             workspace_arg=workspace_arg,
         )
-
         return TritonTemplateCaller(
             kernel_hash_name,
             full_input_nodes,
@@ -1252,7 +1470,7 @@ class TritonTemplate(KernelTemplate):
             },
             mutated_inputs=mutated_inputs,
             workspace_arg=workspace_arg,
-            allowed_prologue_inps=kernel.prologue_supported_inputs.copy(),
+            allowed_prologue_inps=prologue_supported_inputs,
         )
 
 
