@@ -1392,6 +1392,7 @@ class OutputGraph:
             counters["stats"]["calls_captured"] += ncalls
 
             self.remove_tensorify_specialized_graphargs()
+            self.normalize_intermediate_node_names()
 
             # free a bit of memory
             self.real_value_cache.clear()
@@ -1765,6 +1766,37 @@ class OutputGraph:
                     u.replace_all_uses_with(guard_scalar(example_value.item_memo))
                     self.remove_node(u)
                 self.remove_node(node)
+
+    def normalize_intermediate_node_names(self) -> None:
+        # At a high level this pass ensures that name indexes are monotonically
+        # increasing. There are some inconsistencies in how names are done
+        # across different fx passes, operators, etc. For example, sometimes the node name
+        # will be named some_op and other times it will be some_op_0. It's non trivial to
+        # audit all callsites so for now we allow both to exist but maintain the invariant
+        # that subsequent `some_op` names must have a motonically increasing index.
+        # eg. some_op_2, some_op_1 will be normalized to some_op_2, some_op_3`
+
+        base_name_counter: dict[str, int] = collections.defaultdict(int)
+
+        for node in self.graph.nodes:
+            if node.op == "placeholder" or node.op == "output":
+                continue
+
+            name_parts = node.name.rsplit("_", 1)
+            if len(name_parts) > 1 and name_parts[1].isdigit():
+                base_name = name_parts[0]
+                base_name_counter[base_name] = max(
+                    base_name_counter[base_name], int(name_parts[1])
+                )
+            else:
+                base_name = node.name
+
+            if base_name_counter[base_name] == 0:
+                node.name = f"{node.name}"
+            else:
+                node.name = f"{base_name}_{base_name_counter[base_name]}"
+
+            base_name_counter[base_name] += 1
 
     def add_output_instructions(self, prefix: list[Instruction]) -> None:
         """
