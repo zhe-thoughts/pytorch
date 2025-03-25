@@ -41,6 +41,7 @@ from torch.testing._internal.common_utils import (
     IS_CI,
     IS_FBCODE,
     IS_MACOS,
+    IS_S390X,
     IS_WINDOWS,
     skipIfRocm,
     skipIfXpu,
@@ -4926,6 +4927,7 @@ copy_tests(
 )
 
 
+@unittest.skipIf(IS_S390X, "No CUDA on S390X")
 @unittest.skipIf(sys.platform == "darwin", "No CUDA on MacOS")
 class AOTInductorTestABICompatibleGpu(TestCase):
     device = GPU_TYPE
