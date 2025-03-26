@@ -275,6 +275,17 @@ class CachingAutotuner(KernelInterface):
         self.compile_id: Optional[CompileId] = None
         self.is_backward = False
 
+    def is_statically_launchable(self):
+        """
+        Checks if every compiled kernel is statically launchable, which
+        allows us to efficiently cache it in FXGraphCache
+        """
+        if not self.compile_results:
+            return False
+        return all(
+            isinstance(x, StaticTritonCompileResult) for x in self.compile_results
+        )
+
     def set_compile_info(
         self, compile_id: Optional[CompileId], is_backward: bool
     ) -> None:
@@ -285,6 +296,7 @@ class CachingAutotuner(KernelInterface):
         self,
         warm_cache_only=False,
         reload_kernel: Optional[Callable[[], CachingAutotuner]] = None,
+        static_triton_bundle_key: Optional[str] = None,
     ):
         if warm_cache_only:
             self._precompile_worker()
@@ -297,6 +309,8 @@ class CachingAutotuner(KernelInterface):
             if reload_kernel is not None:
                 self._reload_kernel = reload_kernel
             self._precompile_worker()
+            if static_triton_bundle_key is not None and self.is_statically_launchable():
+                TritonBundler.put_static_autotuner(static_triton_bundle_key, self)
             self._make_launchers()
             self._dynamic_scale_rblock()
 
@@ -462,15 +476,24 @@ class CachingAutotuner(KernelInterface):
             raise RuntimeError(f"No valid triton configs. {type(exc).__name__}: {exc}")
         self.launchers = launchers
 
-    def prepare_for_pickle(self):
+    def prepare_for_pickle(self) -> tuple[Any, Any, Any, Any, Any]:
         """Drop stuff from triton.JITFunction that does not pickle.
         This must be called after precompile so that these things are no longer needed.
+        Returns a tuple of old values
         """
+        old_values = (
+            self.fn.fn,
+            self.fn.__globals__,
+            self.fn.used_global_vals,
+            self.fn.repr,
+            self.launchers,
+        )
         self.fn.fn = None
         self.fn.__globals__ = None
         self.fn.used_global_vals = None
         self.fn.repr = _ConstRepr(self.fn.repr(self.fn))
         self.launchers = []
+        return old_values
 
     def __getstate__(self) -> dict[str, Any]:
         assert not self.launchers, (
@@ -1037,17 +1060,19 @@ class CompileResult(Generic[_T]):
     def make_launcher(self) -> LauncherType: ...
 
     def _gen_launcher_code(self, scope, def_args, runner_args) -> LauncherType:
-        grid = GridExpr.from_meta(self.inductor_meta, self.config)
-        # grid.prefix is usually empty, grid.x_grid is something like `-(xnumel//-1024)`
-        lines = [
-            f"def launcher({', '.join(def_args)}, stream):",
-            *[f"    {line}" for line in grid.prefix],
-            f"    grid_0 = {grid.x_grid}",
-            f"    grid_1 = {grid.y_grid}",
-            f"    grid_2 = {grid.z_grid}",
-            f"    runner({', '.join(runner_args)})",
-        ]
-        exec("\n".join(lines), scope)
+        if not hasattr(self, "launcher_code"):
+            grid = GridExpr.from_meta(self.inductor_meta, self.config)
+            # grid.prefix is usually empty, grid.x_grid is something like `-(xnumel//-1024)`
+            lines = [
+                f"def launcher({', '.join(def_args)}, stream):",
+                *[f"    {line}" for line in grid.prefix],
+                f"    grid_0 = {grid.x_grid}",
+                f"    grid_1 = {grid.y_grid}",
+                f"    grid_2 = {grid.z_grid}",
+                f"    runner({', '.join(runner_args)})",
+            ]
+            self.launcher_code = "\n".join(lines)
+        exec(self.launcher_code, scope)
         return scope["launcher"]
 
     def _get_arg_lists(
@@ -1189,8 +1214,26 @@ class StaticTritonCompileResult(CompileResult[StaticallyLaunchedCudaKernel]):
                 raise e
             return None
 
+    def reload_cubin_path(self):
+        """
+        When loading from cache on disk, we want to reload cubin
+        files from their appropriate location on disc.
+        """
+        cubin_location = os.path.join(
+            triton_cache_dir(self.compile_meta.get("device", 0)),
+            triton_hash_to_path_key(self.kernel.hash),
+            f"{self.kernel.name}.cubin",
+        )
+        if not os.path.exists(cubin_location):
+            raise RuntimeError(
+                "Cubin file saved by TritonBundler not found at %s", cubin_location
+            )
+        self.kernel.cubin_path = cubin_location
+
     def make_launcher(self) -> LauncherType:
         # Load the binary on the parent
+        if not self.kernel.cubin_path:
+            self.reload_cubin_path()
         self.kernel.load_kernel()
         scope = {
             "runner": self.kernel.run,
