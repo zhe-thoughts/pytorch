@@ -119,7 +119,7 @@ COPY ci_commit_pins/triton.txt triton.txt
 COPY ci_commit_pins/triton-cpu.txt triton-cpu.txt
 RUN bash ./install_triton.sh
 
-FROM base as final
+FROM base as base2
 COPY --from=triton-builder /opt/triton /opt/triton
 RUN if [ -n "${TRITON}" ] || [ -n "${TRITON_CPU}" ]; then pip install /opt/triton/*.whl; chown -R jenkins:jenkins /opt/conda; fi
 RUN rm -rf /opt/triton
@@ -132,6 +132,7 @@ COPY ci_commit_pins/executorch.txt executorch.txt
 RUN if [ -n "${EXECUTORCH}" ]; then bash ./install_executorch.sh; fi
 RUN rm install_executorch.sh common_utils.sh executorch.txt
 
+FROM base as halide-builder
 ARG HALIDE
 # Build and install halide
 COPY ./common/install_halide.sh install_halide.sh
@@ -139,6 +140,9 @@ COPY ./common/common_utils.sh common_utils.sh
 COPY ci_commit_pins/halide.txt halide.txt
 RUN if [ -n "${HALIDE}" ]; then bash ./install_halide.sh; fi
 RUN rm install_halide.sh common_utils.sh halide.txt
+
+FROM base2 as final
+COPY --from=halide-builder /opt/conda/envs/* /opt/conda/envs/
 
 ARG ONNX
 # Install ONNX dependencies
