@@ -305,10 +305,11 @@ class KernelStats:
     bw: int
 
 
+KernelNameMap = defaultdict[str, OrderedSet[KernelStats]]
+
+
 def diff_profiles(diff_path: str) -> None:
     from collections import defaultdict
-
-    KernelNameMap = defaultdict[str, OrderedSet[KernelStats]]
 
     def parse(data: dict[str, Any]) -> KernelNameMap:
         name_map: KernelNameMap = defaultdict(OrderedSet)
