@@ -139,8 +139,8 @@ class TestMatmulCuda(TestCase):
     @dtypes(torch.float16, torch.bfloat16, torch.float32)
     @parametrize("size", [100, 1000, 10000])
     def test_cublas_addmm(self, size: int, dtype: torch.dtype):
-        if TEST_WITH_ROCM and isRocmArchAnyOf(NAVI_ARCH) and 
-          getRocmVersion() < (6,4) and dtype == torch.float16 and size >= 10000:
+        if (TEST_WITH_ROCM and isRocmArchAnyOf(NAVI_ARCH) and
+                getRocmVersion() < (6, 4) and dtype == torch.float16 and size >= 10000):
             self.skipTest(f"failed on Navi for ROCm6.3 due to hipblas backend, dtype={dtype} and size={size}")
         self.cublas_addmm(size, dtype, False)
 
