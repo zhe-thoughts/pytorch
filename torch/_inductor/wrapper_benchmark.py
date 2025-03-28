@@ -302,7 +302,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class KernelStats:
     flops: int
-    bw: int
+    bw: float
 
 
 KernelNameMap = defaultdict[str, OrderedSet[KernelStats]]
@@ -536,6 +536,11 @@ def compiled_module_main(
                 benchmark_compiled_module_fn,
             )
         if args.diff:
-            diff_profiles(args.diff)
+            if not args.profile:
+                print(
+                    "Skipping diff; please run the compiled module with --profile"
+                )
+            else:
+                diff_profiles(args.diff)
         if args.ncu:
             ncu_analyzer(benchmark_name, benchmark_compiled_module_fn)
