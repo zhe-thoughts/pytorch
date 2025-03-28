@@ -825,26 +825,31 @@ class BaseSchedulerNode:
             assert isinstance(self.node, ir.ExternKernel), f"{type(self.node)=}"
             if self.node is None:
                 return 0
+            op = kernel_name_to_op.get(
+                getattr(self.node, "python_kernel_name", ""), None
+            )
 
-            # if there is a resolved op, dry-run using fake mode and record flop count
-            if any(
-                len(free_unbacked_symbols(n.get_numel())) > 0 for n in self.node.inputs
-            ):
-                # Tensor has unbacked symints, we don't know how to estimate
-                # runtime for that today
-                return 0
+            if op is not None:
+                # if there is a resolved op, dry-run using fake mode and record flop count
+                if any(
+                    len(free_unbacked_symbols(n.get_numel())) > 0
+                    for n in self.node.inputs
+                ):
+                    # Tensor has unbacked symints, we don't know how to estimate
+                    # runtime for that today
+                    return 0
 
-            counted_flops = self.estimate_flops()
-            counted_flops = 0 if counted_flops is None else counted_flops
-            # TODO(xmfan): find a better heuristic to model FLOPS/latency relationship
-            factor = 1.0
-            counted_bytes = self.get_read_write_buffers_sizes()
-            counted_bytes = 0 if counted_bytes is None else counted_bytes
-            compute_time = (factor * counted_flops / gpu_flops) * 1e9
-            transfer_time = counted_bytes / gpu_memory_bandwidth
+                counted_flops = self.estimate_flops()
+                counted_flops = 0 if counted_flops is None else counted_flops
+                # TODO(xmfan): find a better heuristic to model FLOPS/latency relationship
+                factor = 1.0
+                counted_bytes = self.get_read_write_buffers_sizes()
+                counted_bytes = 0 if counted_bytes is None else counted_bytes
+                compute_time = (factor * counted_flops / gpu_flops) * 1e9
+                transfer_time = counted_bytes / gpu_memory_bandwidth
 
-            # Return estimated runtime in nanoseconds
-            return max(compute_time, transfer_time)
+                # Return estimated runtime in nanoseconds
+                return max(compute_time, transfer_time)
 
         elif isinstance(self, FusedSchedulerNode) or isinstance(
             self.node, ComputedBuffer
