@@ -34,6 +34,7 @@ def compute_local_shape_and_global_offset(
     Let's say we distribute a global_tensor of shape (8,4) over the above DeviceMesh
     with a placements of [Shard(0), Shard(0)].
     The local shape and global offset will be as follows:
+    # TODO(whc) - is this example correct? it feels wrong to me...
     rank0 -- local_shape:[1, 4], global_offset:[0, 0]
     rank1 -- local_shape:[1, 4], global_offset:[1, 0]
     rank2 -- local_shape:[1, 4], global_offset:[2, 0]

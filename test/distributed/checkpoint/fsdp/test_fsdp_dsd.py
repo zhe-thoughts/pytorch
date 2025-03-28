@@ -458,8 +458,8 @@ class TestFullyShardWithDistributedStateDict(FSDPTest):
         """
         Test that we can save a model with FSDP2 + TP on 2d mesh and load it with TP.
         """
-
-        def _get_base_model(mlp_dim: int = 2):
+        mlp_dim = 5
+        def _get_base_model(mlp_dim: int = mlp_dim):
             base_model = nn.Sequential(MLP(mlp_dim), MLP(mlp_dim), MLP(mlp_dim))
             return base_model
 
@@ -521,7 +521,7 @@ class TestFullyShardWithDistributedStateDict(FSDPTest):
                 fsdp2_tp_optim = torch.optim.AdamW(fsdp2_tp_model.parameters(), lr=0.1)
 
                 # one-step training to modify state dict
-                inp = torch.randn((2,), device=self.rank)
+                inp = torch.randn((mlp_dim,), device=self.rank)
                 base_model(inp).sum().backward()
                 base_optim.step()
                 fsdp2_tp_model(inp).sum().backward()
@@ -589,11 +589,35 @@ class TestFullyShardWithDistributedStateDict(FSDPTest):
                     options=StateDictOptions(full_state_dict=True, cpu_offload=True),
                 )
 
+                # Load state dict into another 'base model'
+                noparallel_model = _get_base_model()
+                noparallel_optim = torch.optim.AdamW(noparallel_model.parameters(), lr=0.1)
+
+                noparallel_state_dict = {
+                    "model": get_model_state_dict(noparallel_model),
+                    "optim": get_optimizer_state_dict(noparallel_model, noparallel_optim),
+                }
+                dcp.load(noparallel_state_dict, checkpoint_id=self.temp_dir)
+                noparallel_model.load_state_dict(noparallel_state_dict["model"])
+                noparallel_optim.load_state_dict(noparallel_state_dict["optim"])
+
+                noparallel_full_msd = get_model_state_dict(
+                    noparallel_model,
+                    options=StateDictOptions(full_state_dict=True, cpu_offload=True),
+                )
+                noparallel_full_osd = get_optimizer_state_dict(
+                    noparallel_model,
+                    noparallel_optim,
+                    options=StateDictOptions(full_state_dict=True, cpu_offload=True),
+                )
+
                 # Compare full state dict to make sure they are the same.
                 self.assertEqual(base_msd, tp_full_msd)
                 self.assertEqual(base_osd, tp_full_osd)
                 self.assertEqual(fsdp2_tp_full_msd, tp_full_msd)
                 self.assertEqual(fsdp2_tp_full_osd, tp_full_osd)
+                self.assertEqual(base_msd, noparallel_full_msd)
+                self.assertEqual(base_osd, noparallel_full_osd)
 
 
 if __name__ == "__main__":
