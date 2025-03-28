@@ -308,8 +308,10 @@ class KernelStats:
 def diff_profiles(diff_path: str) -> None:
     from collections import defaultdict
 
-    def parse(data):
-        name_map: defaultdict[str, OrderedSet(KernelStats)] = defaultdict(OrderedSet)
+    KernelNameMap = defaultdict[str, OrderedSet[KernelStats]]
+
+    def parse(data: dict[str, Any]) -> KernelNameMap:
+        name_map: KernelNameMap = defaultdict(OrderedSet)
         for event in data["traceEvents"]:
             if (
                 "args" in event
@@ -323,7 +325,12 @@ def diff_profiles(diff_path: str) -> None:
                 )
         return name_map
 
-    def combine_name_maps(filename1, name_map1, filename2, name_map2):
+    def combine_name_maps(
+        filename1: str,
+        name_map1: KernelNameMap,
+        filename2: str,
+        name_map2: KernelNameMap,
+    ) -> None:
         from tabulate import tabulate
 
         combined_table = {}
@@ -357,7 +364,7 @@ def diff_profiles(diff_path: str) -> None:
         table = [[name] + values for name, values in combined_table.items()]
         print(tabulate(table, headers=headers, tablefmt="grid"))
 
-    def parse_helper(filename):
+    def parse_helper(filename: str) -> defaultdict[str, OrderedSet[KernelStats]]:
         with open(filename) as f:
             data = json.load(f)
         return parse(data)
@@ -384,7 +391,7 @@ def perf_profile(
     event_list = p.key_averages(group_by_input_shape=True)
     print(event_list.table(sort_by="self_device_time_total", row_limit=10))
     parse_profile_event_list(
-        benchmark_name, event_list, wall_time_ms, times * repeat, p.use_device
+        benchmark_name, event_list, wall_time_ms, times * repeat, p.use_device or ""
     )
 
 
