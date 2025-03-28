@@ -41,6 +41,7 @@ from .dependencies import Dep, MemoryDep, StarDep, WeakDep
 from .exc import GPUTooOldForTriton, TritonMissing
 from .ir import (
     ComputedBuffer,
+    ExternKernel,
     get_device_type,
     GraphPartitionSignature,
     MultiOutput,
@@ -743,33 +744,41 @@ class BaseSchedulerNode:
 
         op = kernel_name_to_op.get(getattr(self.node, "python_kernel_name", ""), None)
 
-        if op is not None:
-            if self.node is None:
-                return None
-            if any(
-                len(free_unbacked_symbols(n.get_numel())) > 0 for n in self.node.inputs
-            ):
-                # Tensor has unbacked symints, we don't know how to estimate
-                # runtime for that today
-                return None
+        if isinstance(self, ExternKernel):
+            if op is not None:
+                # make mypy happy
+                # mypy isn't smart enough to infer from InputsKernel that self.node.inputs
+                # and self.node.fx_node exists
+                kern: ExternKernel = self
+                if kern.node is None:
+                    return None
+                if any(
+                    len(free_unbacked_symbols(n.get_numel())) > 0
+                    for n in kern.node.inputs
+                ):
+                    # Tensor has unbacked symints, we don't know how to estimate
+                    # runtime for that today
+                    return None
 
-            with (
-                FakeTensorMode() as fake_mode,
-                FlopCounterMode(display=False) as flop_counter_mode,
-                V.set_current_node(self.node.fx_node),
-                V.set_fake_mode(fake_mode),
-            ):
-                from .ir import ir_node_to_tensor
+                with (
+                    FakeTensorMode() as fake_mode,
+                    FlopCounterMode(display=False) as flop_counter_mode,
+                    V.set_current_node(kern.node.fx_node),  # type ignore[attr-defined]
+                    V.set_fake_mode(fake_mode),
+                ):
+                    from .ir import ir_node_to_tensor
 
-                fake_inputs = [
-                    ir_node_to_tensor(input, guard_shape=False)
-                    for input in self.node.inputs
-                ]
-                cls = self.node.__class__
-                cls.process_kernel(op, *fake_inputs, **self.node.kwargs)
+                    fake_inputs = [
+                        ir_node_to_tensor(input, guard_shape=False)
+                        for input in kern.node.inputs  # type: ignore[attr-defined]
+                    ]
+                    cls = kern.node.__class__
+                    cls.process_kernel(op, *fake_inputs, **kern.node.kwargs)
 
-                ret = flop_counter_mode.get_total_flops()
-                return ret
+                    ret = flop_counter_mode.get_total_flops()
+                    with open("flops", "a") as file:
+                        file.write(str(kern.node) + "\nFlops: " + str(ret) + "\n")
+                    return ret
         return None
 
     @cache_on_self
@@ -826,6 +835,7 @@ class BaseSchedulerNode:
                 return 0
 
             counted_flops = self.estimate_flops()
+            counted_flops = 0 if counted_flops is None else counted_flops
             # TODO(xmfan): find a better heuristic to model FLOPS/latency relationship
             factor = 1.0
             counted_bytes = self.get_read_write_buffers_sizes()
