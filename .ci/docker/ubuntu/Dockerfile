@@ -143,6 +143,7 @@ RUN rm install_halide.sh common_utils.sh halide.txt
 
 FROM base2 as final
 COPY --from=halide-builder /opt/conda/envs/* /opt/conda/envs/
+RUN chown -R jenkins:jenkins /opt/conda
 
 ARG ONNX
 # Install ONNX dependencies
