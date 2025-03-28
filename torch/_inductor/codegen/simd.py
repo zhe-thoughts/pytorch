@@ -900,7 +900,6 @@ class SIMDKernel(Kernel[CSEVariableType], Generic[CSEVariableType]):
         return fn(value)
 
     def estimate_flops(self) -> int:
-        # self.features.node_schedule
         f = [
             node.estimate_flops()
             for node in NodeScheduleMarker.only_nodes(self.features.node_schedule)

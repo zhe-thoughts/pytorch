@@ -769,8 +769,6 @@ class BaseSchedulerNode:
                 cls.process_kernel(op, *fake_inputs, **self.node.kwargs)
 
                 ret = flop_counter_mode.get_total_flops()
-                with open("flops", "a") as file:
-                    file.write(str(self.node) + " " + str(ret) + "\n")
                 return ret
         return None
 
