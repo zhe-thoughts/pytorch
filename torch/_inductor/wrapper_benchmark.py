@@ -385,7 +385,7 @@ def perf_profile(
     with torch.profiler.profile(record_shapes=True) as p:
         benchmark_compiled_module_fn(times=times, repeat=repeat)
 
-    path = f"{tempfile.gettempdir()}/compiled_module_profile.json"
+    path = PROFILE_PATH
     p.export_chrome_trace(path)
     print(f"Profiling result for a compiled module of benchmark {benchmark_name}:")
     print(f"Chrome trace for the profile is written to {path}")
