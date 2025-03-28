@@ -35,17 +35,6 @@ install_conda_dependencies() {
   popd
 }
 
-install_pip_dependencies() {
-  pushd executorch
-  as_jenkins bash install_executorch.sh
-
-  # A workaround, ExecuTorch has moved to numpy 2.0 which is not compatible with the current
-  # numba and scipy version used in PyTorch CI
-  conda_run pip uninstall -y numba scipy
-
-  popd
-}
-
 setup_executorch() {
   pushd executorch
 
@@ -60,5 +49,4 @@ setup_executorch() {
 clone_executorch
 install_buck2
 install_conda_dependencies
-install_pip_dependencies
 setup_executorch
