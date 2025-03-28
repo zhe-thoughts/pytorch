@@ -137,11 +137,12 @@ RUN if [ -n "${HALIDE}" ]; then bash ./install_halide.sh; fi
 
 FROM base as final
 COPY --from=triton-builder /opt/triton /opt/triton
-RUN if [ -n "${TRITON}" ] || [ -n "${TRITON_CPU}" ]; then pip install /opt/triton/*.whl; chown -R jenkins:jenkins /opt/conda; fi
+RUN if [ -n "${TRITON}" ] || [ -n "${TRITON_CPU}" ]; then pip install /opt/triton/*.whl; fi
 RUN rm -rf /opt/triton
 
-COPY --from=halide-builder      /opt/conda/envs/* /opt/conda/envs/
-COPY --from=executorch-builder  /opt/conda/envs/* /opt/conda/envs/
+COPY --from=halide-builder      /opt/halide /opt/conda/envs/py_$ANACONDA_PYTHON_VERSION
+COPY --from=executorch-builder  /opt/executorch /opt/executorch
+RUN if [ -n "${EXECUTORCH}" ]; then pip install /opt/executorch/*.whl; fi
 RUN chown -R jenkins:jenkins /opt/conda
 
 ARG ONNX
