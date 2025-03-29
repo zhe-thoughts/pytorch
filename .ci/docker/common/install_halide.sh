@@ -12,7 +12,7 @@ test -n "$ANACONDA_PYTHON_VERSION"
 eval "$(conda shell.bash hook)"
 conda activate py_$ANACONDA_PYTHON_VERSION
 
-export CMAKE_MINIMUM_REQUIRED_VERSION=3.10
+export CMAKE_POLICY_VERSION_MINIMUM=3.10
 
 if [ -n "${UBUNTU_VERSION}" ];then
     apt update
