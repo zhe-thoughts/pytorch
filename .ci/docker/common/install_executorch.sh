@@ -54,6 +54,8 @@ clone_executorch
 install_buck2
 install_conda_dependencies
 setup_executorch
-python setup.py bdist_wheel
 
+pushd executorch
+python setup.py bdist_wheel
 mv dist/*.whl /opt/executorch
+popd
