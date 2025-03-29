@@ -45,8 +45,3 @@ cmake --install build --prefix /opt/halide
 chown -R jenkins ${CONDA_PREFIX}
 popd
 rm -rf Halide llvm-build llvm-project llvm-install
-
-python -c "import halide"  # check for errors
-
-# Restore cmake version for pytorch build.  Remove when cmake 4.0.0 is more supported
-pip_install cmake==3.31.6
