@@ -59,7 +59,7 @@ jobs:
       docker-image: ${{ needs.linux-focal-rocm6_3-py3_10-build.outputs.docker-image }}
       test-matrix: ${{ needs.linux-focal-rocm6_3-py3_10-build.outputs.test-matrix }}
     secrets: inherit
-    
+
   linux-focal-rocm6_3-py3_10-gfx1100-test:
     permissions:
       id-token: write
@@ -84,4 +84,3 @@ jobs:
          inductor/test_torchinductor inductor/test_torchinductor_opinfo inductor/test_decompose_mem_bound_mm
          inductor/test_flex_attention inductor/test_max_autotune
     secrets: inherit
-

@@ -52,7 +52,6 @@ from typing import (
     Optional,
     TypeVar,
     Union,
-    Tuple,
 )
 from collections.abc import Iterable, Iterator
 from unittest.mock import MagicMock
@@ -1964,7 +1963,7 @@ def skipIfHpu(fn):
             fn(*args, **kwargs)
     return wrapper
 
-def getRocmVersion() -> Tuple[int]:
+def getRocmVersion() -> tuple[int, int, int]:
     rocm_version = str(torch.version.hip)
     rocm_version = rocm_version.split("-")[0]    # ignore git sha
     rocm_version_tuple = tuple(int(x) for x in rocm_version.split("."))
