@@ -68,6 +68,6 @@ install_pip_dependencies
 setup_executorch
 
 pushd executorch
-python setup.py bdist_wheel
+conda_run python setup.py bdist_wheel
 mv dist/*.whl /opt/executorch
 popd
