@@ -125,7 +125,7 @@ ARG EXECUTORCH
 COPY ./common/install_executorch.sh install_executorch.sh
 COPY ./common/common_utils.sh common_utils.sh
 COPY ci_commit_pins/executorch.txt executorch.txt
-RUN if [ -n "${EXECUTORCH}" ]; then bash ./install_executorch.sh; fi
+RUN if [ -n "${EXECUTORCH}" ]; then bash ./install_executorch.sh; else mkdir /opt/executorch; fi
 
 FROM base as halide-builder
 ARG HALIDE
@@ -133,7 +133,7 @@ ARG HALIDE
 COPY ./common/install_halide.sh install_halide.sh
 COPY ./common/common_utils.sh common_utils.sh
 COPY ci_commit_pins/halide.txt halide.txt
-RUN if [ -n "${HALIDE}" ]; then bash ./install_halide.sh; fi
+RUN if [ -n "${HALIDE}" ]; then bash ./install_halide.sh; else mkdir /opt/halide; fi
 
 FROM base as final
 COPY --from=triton-builder /opt/triton /opt/triton

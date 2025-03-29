@@ -12,6 +12,8 @@ test -n "$ANACONDA_PYTHON_VERSION"
 eval "$(conda shell.bash hook)"
 conda activate py_$ANACONDA_PYTHON_VERSION
 
+export CMAKE_MINIMUM_REQUIRED_VERSION=3.10
+
 if [ -n "${UBUNTU_VERSION}" ];then
     apt update
     apt-get install -y lld liblld-15-dev libpng-dev libjpeg-dev libgl-dev \
@@ -45,3 +47,6 @@ popd
 rm -rf Halide llvm-build llvm-project llvm-install
 
 python -c "import halide"  # check for errors
+
+# Restore cmake version for pytorch build.  Remove when cmake 4.0.0 is more supported
+pip_install cmake==3.31.6

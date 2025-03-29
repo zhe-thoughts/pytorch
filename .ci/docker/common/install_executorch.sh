@@ -48,6 +48,8 @@ setup_executorch() {
   popd
 }
 
+export CMAKE_MINIMUM_REQUIRED_VERSION=3.10
+
 clone_executorch
 install_buck2
 install_conda_dependencies
