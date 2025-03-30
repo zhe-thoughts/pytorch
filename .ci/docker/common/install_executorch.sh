@@ -69,5 +69,6 @@ setup_executorch
 
 pushd executorch
 conda_run python setup.py bdist_wheel
-mv dist/*.whl /opt/executorch
+mv dist/*.whl /opt/executorch/whl
 popd
+mv executorch /opt/executorch/repo

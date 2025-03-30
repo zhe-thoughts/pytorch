@@ -140,9 +140,9 @@ COPY --from=triton-builder /opt/triton /opt/triton
 RUN if [ -n "${TRITON}" ] || [ -n "${TRITON_CPU}" ]; then pip install /opt/triton/*.whl; fi
 RUN rm -rf /opt/triton
 
-COPY --from=halide-builder      /opt/halide /opt/conda/envs/py_$ANACONDA_PYTHON_VERSION
+COPY --from=halide-builder      /opt/halide/* /opt/conda/envs/py_${ANACONDA_PYTHON_VERSION}/
 COPY --from=executorch-builder  /opt/executorch /opt/executorch
-RUN if [ -n "${EXECUTORCH}" ]; then pip install /opt/executorch/*.whl; fi
+RUN if [ -n "${EXECUTORCH}" ]; then pip install /opt/executorch/*.whl; mv /opt/executorch/repo ./executorch; fi
 RUN chown -R jenkins:jenkins /opt/conda
 
 ARG ONNX
