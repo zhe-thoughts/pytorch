@@ -2,7 +2,7 @@
 # Required environment variables:
 #   $BUILD_ENVIRONMENT (should be set by your Docker image)
 
-if [[ "$BUILD_ENVIRONMENT" != *win-* ]]; then
+if [[ "$BUILD_ENVIRONMENT" != *win-* && "$BUILD_ENVIRONMENT" != *s390x* ]]; then
     # Save the absolute path in case later we chdir (as occurs in the gpu perf test)
     script_dir="$( cd "$(dirname "${BASH_SOURCE[0]}")" || exit ; pwd -P )"
 
