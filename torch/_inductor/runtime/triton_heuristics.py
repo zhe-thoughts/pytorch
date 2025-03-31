@@ -31,6 +31,7 @@ from typing import (
 
 import torch
 from torch._prims_common import compute_required_storage_length
+from torch.monitor import _WaitCounter
 from torch.utils._ordered_set import OrderedSet
 
 from ..triton_bundler import TritonBundler
@@ -822,7 +823,9 @@ class CachingAutotuner(KernelInterface):
             dynamo_compile_runtime_column_us="runtime_triton_autotune_time_us",
             compile_id=self.compile_id,
             is_backward=self.is_backward,
-        ):
+            log_waitcounter=True,
+            waitcounter_name_override="triton_autotuner",
+        ), _WaitCounter("pytorch.wait_counter.dynamo_compile").guard():
             timings = {
                 launcher: self.bench(launcher, *args, **kwargs)
                 for launcher in self.launchers
